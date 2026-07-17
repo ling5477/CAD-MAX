@@ -8,20 +8,17 @@ namespace CadMax.Bridge.Core;
 /// Validates, resolves, times, cancels, and safely maps bridge command execution.
 /// Thread safety comes from an immutable registry and per-request cancellation sources.
 /// </summary>
-public sealed class CadCommandDispatcher
+public sealed partial class CadCommandDispatcher
 {
     private readonly CadCommandRegistry registry;
-    private readonly CadCommandValidator validator;
     private readonly ILogger<CadCommandDispatcher> logger;
 
     /// <summary>Create a dispatcher from immutable collaborators.</summary>
     public CadCommandDispatcher(
         CadCommandRegistry registry,
-        CadCommandValidator validator,
         ILogger<CadCommandDispatcher> logger)
     {
         this.registry = registry;
-        this.validator = validator;
         this.logger = logger;
     }
 
@@ -35,7 +32,7 @@ public sealed class CadCommandDispatcher
     {
         ArgumentNullException.ThrowIfNull(request);
         var stopwatch = Stopwatch.StartNew();
-        var validationErrors = validator.Validate(request);
+        var validationErrors = CadCommandValidator.Validate(request);
         if (validationErrors.Count > 0)
         {
             return CadResultEnvelope.Failure(
@@ -104,8 +101,8 @@ public sealed class CadCommandDispatcher
         }
         catch (Exception exception)
         {
-            logger.LogError(
-                "Command failed, requestId={RequestId}, traceId={TraceId}, command={Command}, exceptionType={ExceptionType}",
+            LogCommandFailure(
+                logger,
                 request.RequestId,
                 request.TraceId,
                 request.Command,
@@ -118,4 +115,15 @@ public sealed class CadCommandDispatcher
                 durationMs: stopwatch.ElapsedMilliseconds);
         }
     }
+
+    [LoggerMessage(
+        EventId = 1,
+        Level = LogLevel.Error,
+        Message = "Command failed, requestId={RequestId}, traceId={TraceId}, command={Command}, exceptionType={ExceptionType}")]
+    private static partial void LogCommandFailure(
+        ILogger logger,
+        string requestId,
+        string traceId,
+        string command,
+        string exceptionType);
 }

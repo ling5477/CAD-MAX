@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CadMax.Contracts;
 
 namespace CadMax.Bridge.Core;
@@ -5,10 +6,10 @@ namespace CadMax.Bridge.Core;
 /// <summary>
 /// Validates contract version, correlation IDs, command names, and timeout bounds.
 /// </summary>
-public sealed class CadCommandValidator
+public static class CadCommandValidator
 {
     /// <summary>Return all client-safe validation errors without throwing.</summary>
-    public IReadOnlyList<string> Validate(CadCommandRequest request)
+    public static IReadOnlyList<string> Validate(CadCommandRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         var errors = new List<string>();

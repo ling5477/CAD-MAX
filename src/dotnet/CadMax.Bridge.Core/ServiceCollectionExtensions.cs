@@ -15,7 +15,6 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.AddLogging();
-        services.AddSingleton<CadCommandValidator>();
         services.AddSingleton<CadCommandRegistry>(provider =>
             new CadCommandRegistry(provider.GetServices<ICadCommandHandler>()));
         services.AddSingleton<CadCommandDispatcher>();

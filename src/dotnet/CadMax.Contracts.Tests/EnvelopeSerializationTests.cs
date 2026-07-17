@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CadMax.Contracts;
+using Xunit;
 
 namespace CadMax.Contracts.Tests;
 

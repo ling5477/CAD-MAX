@@ -5,6 +5,7 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $env:DOTNET_CLI_HOME = Join-Path $repositoryRoot '.tools\dotnet-home'
 $env:NUGET_PACKAGES = Join-Path $repositoryRoot '.tools\nuget-packages'
+$pytestTemp = Join-Path $repositoryRoot '.tools\pytest-temp'
 
 function Invoke-Checked {
     param(
@@ -50,7 +51,7 @@ try {
     Invoke-Checked 'ruff check' { & $uv run ruff check . }
     Invoke-Checked 'ruff format check' { & $uv run ruff format --check . }
     Invoke-Checked 'mypy' { & $uv run mypy src/python }
-    Invoke-Checked 'pytest' { & $uv run pytest }
+    Invoke-Checked 'pytest' { & $uv run pytest --basetemp $pytestTemp }
     Invoke-Checked 'doctor smoke' { & $uv run cad-max-mcp doctor }
     Invoke-Checked 'dotnet restore' {
         & $dotnet restore 'src\dotnet\CadMax.sln' --locked-mode --configfile 'NuGet.Config'

@@ -5,7 +5,7 @@ namespace CadMax.Bridge.Core;
 /// </summary>
 public sealed class CadCommandRegistry
 {
-    private readonly IReadOnlyDictionary<string, ICadCommandHandler> handlers;
+    private readonly Dictionary<string, ICadCommandHandler> handlers;
 
     /// <summary>Create a registry and reject duplicate command ownership.</summary>
     public CadCommandRegistry(IEnumerable<ICadCommandHandler> handlers)

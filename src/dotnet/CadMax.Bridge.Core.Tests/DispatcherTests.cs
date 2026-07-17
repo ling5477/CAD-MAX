@@ -1,6 +1,7 @@
 using System.Text.Json;
 using CadMax.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
 
 namespace CadMax.Bridge.Core.Tests;
 
@@ -83,7 +84,6 @@ public sealed class DispatcherTests
         params ICadCommandHandler[] handlers) =>
         new(
             new CadCommandRegistry(handlers),
-            new CadCommandValidator(),
             NullLogger<CadCommandDispatcher>.Instance);
 
     private static CadCommandRequest CreateRequest(

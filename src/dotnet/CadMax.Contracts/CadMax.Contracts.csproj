@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Language-neutral CAD-MAX bridge contracts.</Description>
+  </PropertyGroup>
+</Project>

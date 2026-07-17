@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cad-max-mcp"
+version = "0.1.0"
+description = "Safe MCP and localhost bridge foundation for CAD-MAX"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { file = "LICENSE" }
+authors = [{ name = "CAD-MAX contributors" }]
+dependencies = [
+  "httpx>=0.28,<1",
+  "mcp[cli]>=1.27,<2",
+  "pydantic>=2.11,<3",
+  "pydantic-settings>=2.10,<3",
+]
+
+[project.scripts]
+cad-max-mcp = "cad_max_mcp.cli:entrypoint"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.17,<2",
+  "pytest>=8.4,<9",
+  "pytest-asyncio>=1.1,<2",
+  "ruff>=0.12,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/python/cad_max_mcp"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src/python", "tests/python"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["cad_max_mcp"]
+mypy_path = "src/python"
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+asyncio_mode = "auto"
+testpaths = ["tests/python"]
+
+[tool.uv]
+default-groups = ["dev"]

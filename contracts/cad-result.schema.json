@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cad-max.dev/contracts/cad-result.schema.json",
+  "title": "CAD-MAX result envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "traceId",
+    "success",
+    "status",
+    "errorCode",
+    "message",
+    "data",
+    "warnings",
+    "durationMs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "requestId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "traceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "status": {
+      "$ref": "#/$defs/status"
+    },
+    "errorCode": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/status"
+        }
+      ]
+    },
+    "message": {
+      "type": "string"
+    },
+    "data": {},
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "durationMs": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "$defs": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "OK",
+        "BACKEND_UNAVAILABLE",
+        "BACKEND_NOT_CONFIGURED",
+        "INVALID_ARGUMENT",
+        "PATH_NOT_ALLOWED",
+        "READ_ONLY",
+        "NOT_IMPLEMENTED",
+        "TIMEOUT",
+        "INTERNAL_ERROR"
+      ]
+    }
+  }
+}

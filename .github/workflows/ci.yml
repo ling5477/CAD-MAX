@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+  pull_request:
+    branches:
+      - dev
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cad-max
+  cancel-in-progress: false
+
+jobs:
+  python:
+    name: Python 3.12
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format
+        run: uv run ruff format --check .
+
+      - name: Mypy
+        run: uv run mypy src/python
+
+      - name: Pytest
+        run: uv run pytest
+
+      - name: Doctor smoke
+        run: uv run cad-max-mcp doctor
+
+  dotnet:
+    name: .NET 8
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: src/dotnet/**/packages.lock.json
+
+      - name: Restore
+        run: dotnet restore src/dotnet/CadMax.sln --locked-mode --configfile NuGet.Config
+
+      - name: Build
+        run: dotnet build src/dotnet/CadMax.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test src/dotnet/CadMax.sln --configuration Release --no-build

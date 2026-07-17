@@ -1,0 +1,43 @@
+# Local toolchains and virtual environments
+.tools/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# .NET
+**/bin/
+**/obj/
+**/TestResults/
+*.user
+*.suo
+.vs/
+
+# IDE-private configuration
+.idea/
+.vscode/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# AutoCAD / Autodesk proprietary binaries (local references only)
+**/acdbmgd.dll
+**/acmgd.dll
+**/accoremgd.dll
+src/dotnet/CadMax.AutoCAD.Plugin/lib/
+
+# Windows sandbox cache artifact; never part of the repository
+%SystemDrive%/
+
+# Miscellaneous build output
+dist/
+artifacts/
+*.log

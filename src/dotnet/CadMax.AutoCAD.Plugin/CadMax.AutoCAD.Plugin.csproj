@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>CadMax.AutoCAD.Plugin</AssemblyName>
+    <RootNamespace>CadMax.AutoCAD.Plugin</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CadMax.Contracts\CadMax.Contracts.csproj" />
+    <ProjectReference Include="..\CadMax.Bridge.Core\CadMax.Bridge.Core.csproj" />
+  </ItemGroup>
+</Project>

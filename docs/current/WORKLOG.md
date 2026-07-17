@@ -24,3 +24,16 @@
 - exact-head CI run `29578296421` 为 `completed / success`，Governance、Python 3.12、.NET 8 全绿。
 - Phase 0 authority 更新为 `COMPLETED`，下一动作更新为 `PLAN_PHASE_1_AUTOCAD_CONNECTION`；Phase 1 仍为 `NOT STARTED`。
 - 本条是 docs-only closeout；最终交付仍要求 closeout SHA 的 exact-head CI 绿色。
+
+## 2026-07-17 / CADMAX-PHASE1-PLAN-AND-GOVERNANCE-SYNC
+
+- `PHASE_1_PLAN` 的 research acceptance、ADR、Phase 1 active plan、numbered work batches、governance
+  contract、checker regression、Codex instructions/templates 与 immutable attempt evidence 已完成。
+- Candidate `f67eed18aa2658ab05c8aa4d8bd0ed9b8fcbe120` 已 push；exact-head CI run
+  `29592363444` 中 Governance、Python 3.12、.NET 8 全绿。
+- Schema 2 closeout 将 `PHASE_1_PLAN` 记录为 `ACCEPTED|CI_GREEN`，初始化
+  `PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP / NOT_STARTED`，唯一下一动作是
+  `IMPLEMENT_PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP`。
+- 安全事实保持：AutoCAD `NOT_CONNECTED`、DWG read/write `NOT_IMPLEMENTED`、write/script
+  `DISABLED`、HTTP `LOOPBACK_ONLY`；未运行真实 AutoCAD 或 DWG integration。
+- 本条写入时 closeout 尚未 commit/push，最终接受仍取决于 closeout SHA 的 exact-head CI。

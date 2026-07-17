@@ -3,7 +3,8 @@
 CAD-MAX is a safety-first foundation for connecting an MCP client to AutoCAD through
 a Python MCP server and a localhost C# bridge.
 
-Current version: 0.1.0. Phase 0 repository bootstrap is complete; Phase 1 has not started.
+Current version: 0.1.0. Phase 0 repository bootstrap is complete. Phase 1 is active;
+its plan/governance batch is accepted, and the plugin-bootstrap batch has not started.
 
 ## Project governance / 项目治理
 

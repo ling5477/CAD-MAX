@@ -73,23 +73,26 @@ Autodesk binary、SDK、凭证、`.env` 或本机绝对路径。
 - Full `scripts/verify.ps1`：`PASS`；Ruff、mypy、16 Python tests、doctor、governance、locked .NET
   restore/build（0 warning / 0 error）、Contracts 1 test、Bridge/Core/Host 8 tests 全部成功。
 - Independent review：`REVIEW_ACCEPTED|READY_TO_COMMIT`；P0 无，P1 无。
-- Scope review：18 个 task files；runtime/contracts/current authority/current ledger/CI workflow 变更为 0。
+- Candidate scope review：18 个 task files；runtime/contracts/current authority/current ledger/CI workflow
+  变更为 0。Closeout 只修改已授权的 authority、ROADMAP、ledger、evidence 与 root README。
 - Autodesk binary/secret/path scan：`PASS`；Autodesk binary 0、敏感文件名 0、绝对个人路径 0、
   high-confidence secret value 0。
+- Schema 2 closeout worktree full verify：`PASS`；authority regression、60 links、Python/.NET 全部成功。
 - Real AutoCAD / DWG integration：`NOT_RUN`（本任务明确排除）。
 
 ## Candidate
 
-- Candidate commit：`UNCOMMITTED`。
-- Candidate CI run：`NOT_RUN`。
-- Candidate jobs：`NOT_RUN`。
+- Candidate commit：`f67eed18aa2658ab05c8aa4d8bd0ed9b8fcbe120`。
+- Candidate CI run：`29592363444`，`completed / success`，head SHA 与 candidate 精确一致。
+- Candidate jobs：Governance `success`、Python 3.12 `success`、.NET 8 `success`。
 
 ## Closeout
 
 - Closeout commit：`UNCOMMITTED`。
 - Closeout CI run：`NOT_RUN`。
 - Closeout jobs：`NOT_RUN`。
-- Final authority：`NOT_APPLIED`；candidate exact-head CI 成功前不得推进 schema 2。
+- Final authority：schema 2 closeout worktree 已准备；在 closeout commit 与其 exact-head CI 成功前不得报告
+  最终 `CI_GREEN`。
 
 ## Known limitations
 

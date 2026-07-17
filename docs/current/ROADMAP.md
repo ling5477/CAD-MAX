@@ -1,26 +1,24 @@
 # 当前路线
 
-本文件只定义下一允许动作，不覆盖 [STATUS.md](STATUS.md)。完整能力路线见 [../ROADMAP.md](../ROADMAP.md)。
+本文件只定义下一允许动作，不覆盖 [STATUS.md](STATUS.md)。完整 Phase 1 范围和后续 numbered work batch
+见 [PHASE_1_AUTOCAD_CONNECTION_PLAN.md](PHASE_1_AUTOCAD_CONNECTION_PLAN.md)。
 
 ## 当前允许动作
 
-`PLAN_PHASE_1_AUTOCAD_CONNECTION`：
+`IMPLEMENT_PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP`
 
-Phase 0 implementation candidate `4bec3fa042e27c105e636504bae16c2f00ebd1e7` 的 exact-head CI run `29578296421` 已完成且三个 jobs 全部成功。当前只允许形成 Phase 1 可审查计划；本 closeout 文档提交仍必须取得自身 exact-head CI 绿色后才能完成交付。
+只允许完成以下单一 work batch：
 
-Phase 1 计划必须覆盖：
-
-1. AutoCAD 2025/2026 与 .NET 8 兼容边界。
-2. Autodesk DLL 仅本机、未提交引用策略。
-3. 插件启动/停止、健康状态和 localhost 注册。
-4. application/document context queue、锁、取消、超时和资源释放。
-5. 无 AutoCAD、无活动文档、SDK 缺失和版本不匹配的 fail-closed 行为。
-6. 仍不注册 write/script 工具，不开启通用 DWG 修改。
+1. 建立 AutoCAD 2025/2026、.NET 8 的 plugin 项目与编译边界；
+2. 设计并验证获许可本机 Autodesk DLL 的未提交引用方式，`Copy Local` 关闭；
+3. 建立开发 `.bundle` / `PackageContents.xml` 与 load/unload 生命周期证据；
+4. 保持默认 solution/CI 在无 AutoCAD、无 Autodesk DLL 时可构建和测试；
+5. 对 SDK 缺失、版本不匹配、仓库内二进制/绝对路径做 fail-closed 检查。
 
 ## 当前禁止
 
-- 真实 DWG 读取或修改。
-- AutoCAD 2024 / .NET Framework 4.8 混入当前 .NET 8 solution。
-- 提交 Autodesk SDK/DLL 或本机引用路径。
-- 默认监听 `0.0.0.0`、局域网或公网。
-- 注册 write、script 或其他未真实实现的 MCP 工具。
+- 读取或修改 DWG、创建 Golden DWG 或注册业务 MCP operation；
+- 实现 loopback listener、document context queue 或后续 numbered work batch；
+- 提交 Autodesk DLL/SDK、bundle 生成物、本机路径、许可证数据或凭证；
+- 使用 COM、AutoLISP、command string、script、ObjectARX；
+- 放宽 read-only、write/script disabled 或 loopback-only 默认值。

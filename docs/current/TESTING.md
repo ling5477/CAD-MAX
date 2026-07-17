@@ -29,3 +29,17 @@
 - GitHub Actions run：`29578296421`，`completed / success`。
 - Jobs：Governance success；Python 3.12 success；.NET 8 success。
 - 该 run 接受 Phase 0 实现候选；当前 docs-only closeout commit 在创建时尚未 push，其 exact-head CI 必须另行验证。
+
+## 2026-07-17 / Phase 1 plan candidate 与 schema 2 closeout local validation
+
+- Phase 1 plan/governance candidate：`f67eed18aa2658ab05c8aa4d8bd0ed9b8fcbe120`；当时
+  `HEAD == origin/dev`。
+- Candidate GitHub Actions run `29592363444`：`completed / success`；Governance、Python 3.12、
+  .NET 8 全部成功，head SHA 与 candidate 精确一致。
+- Schema 2 closeout worktree 的 `scripts/verify.ps1`：PASS；Ruff、mypy、16 个 Python tests、doctor、
+  contract/authority regression、60 个 Markdown relative links、locked .NET restore/build/test 全部成功。
+- .NET build：0 warnings / 0 errors；.NET tests：Contracts 1 passed，Bridge/Core/Host 8 passed。
+- Authority checker：`PHASE_1 / IN_PROGRESS|NOT_FROZEN`；`PHASE_1_PLAN / ACCEPTED|CI_GREEN`；
+  `PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP / NOT_STARTED`；下一动作匹配。
+- AutoCAD 2025/2026 plugin、Autodesk SDK、真实 DWG read/write：`NOT_RUN / NOT_IMPLEMENTED`。
+- Closeout commit 与 exact-head GitHub Actions：本条创建时为 `NOT_RUN`，不得以 candidate run 代替。

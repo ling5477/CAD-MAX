@@ -1,11 +1,18 @@
 # 当前状态
 
 <!-- cad-max-current-authority:start
-authority_schema=1
-current_phase=PHASE_0
-phase_status=COMPLETED
-next_phase=PHASE_1
-next_action=PLAN_PHASE_1_AUTOCAD_CONNECTION
+authority_schema=2
+current_phase=PHASE_1
+phase_status=IN_PROGRESS|NOT_FROZEN
+accepted_work_batch=PHASE_1_PLAN
+accepted_work_batch_status=ACCEPTED|CI_GREEN
+accepted_work_batch_commit=f67eed18aa2658ab05c8aa4d8bd0ed9b8fcbe120
+accepted_work_batch_ci_run=29592363444
+work_batch=PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP
+work_batch_status=NOT_STARTED
+work_batch_commit=NONE
+work_batch_ci_run=NOT_RUN
+next_action=IMPLEMENT_PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP
 autocad_runtime=NOT_CONNECTED
 dwg_read=NOT_IMPLEMENTED
 dwg_write=NOT_IMPLEMENTED
@@ -15,16 +22,26 @@ allow_script=DISABLED
 http_binding=LOOPBACK_ONLY
 cad-max-current-authority:end -->
 
-`docs/current/STATUS.md` 是 CAD-MAX 当前 Phase、下一动作和安全能力状态的唯一 authority。其他文档只能解释或链接本文件，不得建立独立状态。
+`docs/current/STATUS.md` 是 CAD-MAX 当前 Phase、accepted/work batch、下一动作和安全能力状态的唯一
+authority。其他文档只能解释或链接本文件，不得建立独立状态。
 
-## 当前 Phase
+## 当前 Phase 与 work batch
 
-- Phase 0：`COMPLETED`（已完成）。工程骨架、统一本地验证、stdio/Streamable HTTP smoke 与实现候选 exact-head CI 已通过；实现候选为 `4bec3fa042e27c105e636504bae16c2f00ebd1e7`，CI run 为 `29578296421`，Governance、Python 3.12、.NET 8 均成功。
-- Phase 1：`NOT STARTED`（未开始）。不得把插件边界或 Bridge Host 写成真实 AutoCAD 已连接。
+- Phase 0：`COMPLETED`（已完成）；历史 implementation candidate 为
+  `4bec3fa042e27c105e636504bae16c2f00ebd1e7`，CI run `29578296421`。
+- Phase 1：`IN PROGRESS / NOT FROZEN`（进行中 / 未冻结）。
+- PHASE_1_PLAN：`ACCEPTED / CI GREEN`（已接受 / CI 已通过）；candidate
+  `f67eed18aa2658ab05c8aa4d8bd0ed9b8fcbe120` 的 exact-head CI run `29592363444`
+  中 Governance、Python 3.12、.NET 8 全部成功。
+- PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP：`NOT_STARTED`（未开始）；未产生 implementation commit，
+  未运行该 batch 的 CI。
 
 ## 唯一下一动作
 
-`PLAN_PHASE_1_AUTOCAD_CONNECTION`：只允许规划 AutoCAD 2025/2026 本机 SDK 引用、插件生命周期、document context queue、localhost 注册、取消/超时和失败模式；不授权真实 DWG write 或通用 CAD 操作。
+`IMPLEMENT_PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP`：只允许建立 AutoCAD 2025/2026 .NET 8 plugin
+项目边界、本机 Autodesk DLL 安全引用、开发 `.bundle` / `PackageContents.xml` 与 load/unload 证据；
+不允许图纸读取、DWG 修改、write/script tool 或下一 work batch 实现。执行细节见
+[Phase 1 主计划](PHASE_1_AUTOCAD_CONNECTION_PLAN.md)。
 
 ## 固定安全事实
 
@@ -36,4 +53,5 @@ cad-max-current-authority:end -->
 - allow script：`DISABLED`（关闭）。
 - HTTP binding：`LOOPBACK ONLY`（仅回环地址）。
 
-CI 绿色只证明仓库检查通过，不代表 AutoCAD、DWG 读取或 DWG 修改能力已经实现。
+CI 绿色只接受 Phase 1 plan/governance candidate，不代表 AutoCAD、Autodesk SDK、plugin load、DWG
+读取或 DWG 修改已实现。

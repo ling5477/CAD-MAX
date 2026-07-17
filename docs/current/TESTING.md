@@ -22,3 +22,10 @@
 - Workflow YAML：本地解析 PASS，实际 jobs 为 `governance`、`python`、`dotnet`。
 - 提交内容卫生：`git diff --check` PASS；tracked 文件名未发现 `.env`、密钥、Autodesk/构建二进制或 `.tools/.venv/bin/obj`。
 - 修复提交与 governance 提交的 GitHub Actions：`NOT RUN`（尚未推送）；不得据此宣称 CI_GREEN。
+
+## 2026-07-17 / Phase 0 implementation candidate CI
+
+- Candidate HEAD：`4bec3fa042e27c105e636504bae16c2f00ebd1e7`，且当时 `HEAD == origin/dev`。
+- GitHub Actions run：`29578296421`，`completed / success`。
+- Jobs：Governance success；Python 3.12 success；.NET 8 success。
+- 该 run 接受 Phase 0 实现候选；当前 docs-only closeout commit 在创建时尚未 push，其 exact-head CI 必须另行验证。

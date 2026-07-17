@@ -17,3 +17,10 @@
 - stdio 与 Streamable HTTP 已完成协议级 smoke；没有真实 AutoCAD 或 DWG 操作。
 - 高风险提交前复核：workflow YAML、最小 permissions、timeout、authority 安全负例、文档链接、whitespace、tracked 文件卫生和 revert 回滚路径均通过检查。
 - 下一动作仍为提交、push `dev` 并取得最新 exact-head CI 绿色；当前 Phase 保持 `IN_PROGRESS`。
+
+## 2026-07-17 / PHASE-0-CLOSEOUT
+
+- 实现候选 `4bec3fa042e27c105e636504bae16c2f00ebd1e7` 已 push 到 `origin/dev`。
+- exact-head CI run `29578296421` 为 `completed / success`，Governance、Python 3.12、.NET 8 全绿。
+- Phase 0 authority 更新为 `COMPLETED`，下一动作更新为 `PLAN_PHASE_1_AUTOCAD_CONNECTION`；Phase 1 仍为 `NOT STARTED`。
+- 本条是 docs-only closeout；最终交付仍要求 closeout SHA 的 exact-head CI 绿色。

@@ -4,18 +4,18 @@
 
 ## 当前允许动作
 
-`COMPLETE_BOOTSTRAP_VALIDATION`：
+`PLAN_PHASE_1_AUTOCAD_CONNECTION`：
 
-1. 完成 Python、.NET、documentation governance 的统一验证。
-2. 对 stdio 与 Streamable HTTP 做受控启动/停止 smoke。
-3. 确认未跟踪 Autodesk DLL、`.env`、凭证、缓存或构建产物。
-4. 提交并推送 `dev`，确认 `HEAD == origin/dev`。
-5. 等待 exact-head GitHub Actions 全部成功。
-6. 通过独立 closeout 提交把 Phase 0 更新为 `COMPLETED`，并再次取得 exact-head CI 绿色。
+Phase 0 implementation candidate `4bec3fa042e27c105e636504bae16c2f00ebd1e7` 的 exact-head CI run `29578296421` 已完成且三个 jobs 全部成功。当前只允许形成 Phase 1 可审查计划；本 closeout 文档提交仍必须取得自身 exact-head CI 绿色后才能完成交付。
 
-## Phase 0 完成后
+Phase 1 计划必须覆盖：
 
-唯一允许的后续动作变为 `PLAN_PHASE_1_AUTOCAD_CONNECTION`。Phase 1 必须先冻结 AutoCAD 2025/2026 SDK 本机引用、插件生命周期、document context、localhost 注册和失败模式；不得直接开启通用 DWG 写入。
+1. AutoCAD 2025/2026 与 .NET 8 兼容边界。
+2. Autodesk DLL 仅本机、未提交引用策略。
+3. 插件启动/停止、健康状态和 localhost 注册。
+4. application/document context queue、锁、取消、超时和资源释放。
+5. 无 AutoCAD、无活动文档、SDK 缺失和版本不匹配的 fail-closed 行为。
+6. 仍不注册 write/script 工具，不开启通用 DWG 修改。
 
 ## 当前禁止
 

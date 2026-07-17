@@ -3,9 +3,9 @@
 <!-- cad-max-current-authority:start
 authority_schema=1
 current_phase=PHASE_0
-phase_status=IN_PROGRESS
+phase_status=COMPLETED
 next_phase=PHASE_1
-next_action=COMPLETE_BOOTSTRAP_VALIDATION
+next_action=PLAN_PHASE_1_AUTOCAD_CONNECTION
 autocad_runtime=NOT_CONNECTED
 dwg_read=NOT_IMPLEMENTED
 dwg_write=NOT_IMPLEMENTED
@@ -19,12 +19,12 @@ cad-max-current-authority:end -->
 
 ## 当前 Phase
 
-- Phase 0：`IN PROGRESS`（进行中）。工程骨架已建立，当前仍需完成修复后的统一本地验证、transport smoke、提交/push 与 exact-head CI 绿色验收。
+- Phase 0：`COMPLETED`（已完成）。工程骨架、统一本地验证、stdio/Streamable HTTP smoke 与实现候选 exact-head CI 已通过；实现候选为 `4bec3fa042e27c105e636504bae16c2f00ebd1e7`，CI run 为 `29578296421`，Governance、Python 3.12、.NET 8 均成功。
 - Phase 1：`NOT STARTED`（未开始）。不得把插件边界或 Bridge Host 写成真实 AutoCAD 已连接。
 
 ## 唯一下一动作
 
-`COMPLETE_BOOTSTRAP_VALIDATION`：完成 Phase 0 全量本地验证、stdio/Streamable HTTP smoke、提交与 `origin/dev` exact-head GitHub Actions 绿色验收。
+`PLAN_PHASE_1_AUTOCAD_CONNECTION`：只允许规划 AutoCAD 2025/2026 本机 SDK 引用、插件生命周期、document context queue、localhost 注册、取消/超时和失败模式；不授权真实 DWG write 或通用 CAD 操作。
 
 ## 固定安全事实
 

@@ -88,11 +88,12 @@ Autodesk binary、SDK、凭证、`.env` 或本机绝对路径。
 
 ## Closeout
 
-- Closeout commit：`UNCOMMITTED`。
-- Closeout CI run：`NOT_RUN`。
-- Closeout jobs：`NOT_RUN`。
-- Final authority：schema 2 closeout worktree 已准备；在 closeout commit 与其 exact-head CI 成功前不得报告
-  最终 `CI_GREEN`。
+- Closeout commit：`92aaa83376eebeb47b9f02fae269cd2d02822105`。
+- Closeout CI run：`29592807681`，`completed / success`，head SHA 与 closeout commit 精确一致。
+- Closeout jobs：Governance `success`、Python 3.12 `success`、.NET 8 `success`。
+- Final authority：schema 2；`PHASE_1 / IN_PROGRESS|NOT_FROZEN`；
+  `PHASE_1_PLAN / ACCEPTED|CI_GREEN`；`PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP / NOT_STARTED`；
+  next action `IMPLEMENT_PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP`。
 
 ## Known limitations
 
@@ -100,6 +101,8 @@ Autodesk binary、SDK、凭证、`.env` 或本机绝对路径。
 - self-hosted Windows integration runner 与 Golden DWG 尚未实现；
 - closeout commit/run 无法在其自身 immutable Git tree 内自引用；实际 closeout SHA/run 必须在后续可追踪
   evidence attestation 或最终报告中记录，且该 attestation 自身仍需 exact-head CI。
+- Candidate/closeout CI 对现有 JavaScript action 输出 Node.js 20 deprecation annotation；required jobs
+  均成功，workflow 升级留待独立 CI maintenance task。
 
 ## Rollback
 

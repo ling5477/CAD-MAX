@@ -43,3 +43,16 @@
   `PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP / NOT_STARTED`；下一动作匹配。
 - AutoCAD 2025/2026 plugin、Autodesk SDK、真实 DWG read/write：`NOT_RUN / NOT_IMPLEMENTED`。
 - Closeout commit 与 exact-head GitHub Actions：本条创建时为 `NOT_RUN`，不得以 candidate run 代替。
+
+## 2026-07-17 / Phase 1 authority closeout exact-head CI
+
+- Authority closeout HEAD：`92aaa83376eebeb47b9f02fae269cd2d02822105`，且当时
+  `HEAD == origin/dev`。
+- GitHub Actions run `29592807681`：`completed / success`；head SHA 与 closeout HEAD 精确一致。
+- Jobs：Governance success；Python 3.12 success；.NET 8 success。
+- 该 run 独立验证 schema 2 `STATUS.md`、current ROADMAP、append-only ledger 与 candidate evidence；
+  未使用 candidate run `29592363444` 替代 closeout run。
+- GitHub Actions 对现有 JavaScript action 输出 Node.js 20 deprecation annotation；required jobs 未失败，
+  workflow 升级不属于本 work batch，后续单独评估。
+- 本条与 attempt-01 对 closeout SHA/run 的追记将形成 evidence attestation commit；该 commit 仍需自身
+  exact-head CI，不能把本 run 当作 attestation run。

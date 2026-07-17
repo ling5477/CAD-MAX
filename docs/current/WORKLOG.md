@@ -37,3 +37,12 @@
 - 安全事实保持：AutoCAD `NOT_CONNECTED`、DWG read/write `NOT_IMPLEMENTED`、write/script
   `DISABLED`、HTTP `LOOPBACK_ONLY`；未运行真实 AutoCAD 或 DWG integration。
 - 本条写入时 closeout 尚未 commit/push，最终接受仍取决于 closeout SHA 的 exact-head CI。
+
+## 2026-07-17 / CADMAX-PHASE1-PLAN-AND-GOVERNANCE-SYNC authority closeout
+
+- Authority closeout `92aaa83376eebeb47b9f02fae269cd2d02822105` 已 push 到 `origin/dev`。
+- Closeout exact-head CI run `29592807681` 为 `completed / success`；Governance、Python 3.12、
+  .NET 8 全绿。
+- Schema 2 authority 已验证；唯一下一动作保持
+  `IMPLEMENT_PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP`，该 batch 仍为 `NOT_STARTED`。
+- 本条只追记已发生的 closeout Git/CI 事实；不启动 plugin bootstrap，不改变 AutoCAD/DWG 安全状态。

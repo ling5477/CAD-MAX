@@ -1,0 +1,178 @@
+{
+  "contractSchema": "1.0.0",
+  "authoritySchemas": {
+    "1": {
+      "requiredKeys": [
+        "authority_schema",
+        "current_phase",
+        "phase_status",
+        "next_phase",
+        "next_action",
+        "autocad_runtime",
+        "dwg_read",
+        "dwg_write",
+        "read_only",
+        "allow_write",
+        "allow_script",
+        "http_binding"
+      ],
+      "currentPhase": "PHASE_0",
+      "nextPhase": "PHASE_1",
+      "phaseStatusToNextAction": {
+        "IN_PROGRESS": "COMPLETE_BOOTSTRAP_VALIDATION",
+        "COMPLETED": "PLAN_PHASE_1_AUTOCAD_CONNECTION"
+      }
+    },
+    "2": {
+      "requiredKeys": [
+        "authority_schema",
+        "current_phase",
+        "phase_status",
+        "accepted_work_batch",
+        "accepted_work_batch_status",
+        "accepted_work_batch_commit",
+        "accepted_work_batch_ci_run",
+        "work_batch",
+        "work_batch_status",
+        "work_batch_commit",
+        "work_batch_ci_run",
+        "next_action",
+        "autocad_runtime",
+        "dwg_read",
+        "dwg_write",
+        "read_only",
+        "allow_write",
+        "allow_script",
+        "http_binding"
+      ],
+      "currentPhase": "PHASE_1",
+      "phaseStatus": "IN_PROGRESS|NOT_FROZEN",
+      "acceptedWorkBatchStatus": "ACCEPTED|CI_GREEN",
+      "workBatches": [
+        "PHASE_1_PLAN",
+        "PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP",
+        "PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE",
+        "PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH",
+        "PHASE_1_4_READONLY_DOCUMENT_INSPECTION",
+        "PHASE_1_5_READONLY_OBJECT_INSPECTION",
+        "PHASE_1_6_SELECTION_AND_ACCURACY",
+        "PHASE_1_7_PREVIEW_EVIDENCE_GOLDEN_DWG",
+        "PHASE_1_CLOSEOUT"
+      ]
+    }
+  },
+  "fixedSecurityFacts": {
+    "autocad_runtime": "NOT_CONNECTED",
+    "dwg_read": "NOT_IMPLEMENTED",
+    "dwg_write": "NOT_IMPLEMENTED",
+    "read_only": "ENABLED",
+    "allow_write": "DISABLED",
+    "allow_script": "DISABLED",
+    "http_binding": "LOOPBACK_ONLY"
+  },
+  "workBatchStatuses": [
+    "NOT_STARTED",
+    "IMPLEMENTED|SELF_REVIEWED",
+    "IMPLEMENTED|PENDING_REVIEW",
+    "REVIEW_ACCEPTED|READY_TO_COMMIT",
+    "COMMITTED|CI_PENDING",
+    "COMMITTED|CI_FAILED|FIX_REQUIRED",
+    "COMMITTED|CI_GREEN|CONTINUE_REQUIRED",
+    "ACCEPTED|CI_GREEN"
+  ],
+  "nextActionTypes": {
+    "NOT_STARTED": "IMPLEMENTATION",
+    "IMPLEMENTED|SELF_REVIEWED": "COMMIT_AND_PUSH",
+    "IMPLEMENTED|PENDING_REVIEW": "REVIEW",
+    "REVIEW_ACCEPTED|READY_TO_COMMIT": "COMMIT_AND_PUSH",
+    "COMMITTED|CI_PENDING": "CI_WAIT_OR_INVESTIGATION",
+    "COMMITTED|CI_FAILED|FIX_REQUIRED": "CI_BLOCKER_FIX",
+    "COMMITTED|CI_GREEN|CONTINUE_REQUIRED": "CONTINUATION",
+    "ACCEPTED|CI_GREEN": "POST_CI_SYNC"
+  },
+  "workStatusFieldPolicies": {
+    "NOT_STARTED": {
+      "commitPattern": "^NONE$",
+      "ciRunPattern": "^NOT_RUN$",
+      "nextActionTemplate": "IMPLEMENT_{workBatch}"
+    },
+    "IMPLEMENTED|SELF_REVIEWED": {
+      "commitPattern": "^UNCOMMITTED$",
+      "ciRunPattern": "^NOT_RUN$",
+      "nextActionTemplate": "{workBatch}_COMMIT_AND_PUSH"
+    },
+    "IMPLEMENTED|PENDING_REVIEW": {
+      "commitPattern": "^UNCOMMITTED$",
+      "ciRunPattern": "^NOT_RUN$",
+      "nextActionTemplate": "{workBatch}_REVIEW"
+    },
+    "REVIEW_ACCEPTED|READY_TO_COMMIT": {
+      "commitPattern": "^UNCOMMITTED$",
+      "ciRunPattern": "^NOT_RUN$",
+      "nextActionTemplate": "{workBatch}_COMMIT_AND_PUSH"
+    },
+    "COMMITTED|CI_PENDING": {
+      "commitPattern": "^[0-9a-f]{40}$",
+      "ciRunPattern": "^(PENDING|[1-9][0-9]*)$",
+      "nextActionTemplate": "{workBatch}_CI_WAIT_OR_INVESTIGATION"
+    },
+    "COMMITTED|CI_FAILED|FIX_REQUIRED": {
+      "commitPattern": "^[0-9a-f]{40}$",
+      "ciRunPattern": "^[1-9][0-9]*$",
+      "nextActionTemplate": "{workBatch}_CI_BLOCKER_FIX"
+    },
+    "COMMITTED|CI_GREEN|CONTINUE_REQUIRED": {
+      "commitPattern": "^[0-9a-f]{40}$",
+      "ciRunPattern": "^[1-9][0-9]*$",
+      "nextActionTemplate": "CONTINUE_{workBatch}"
+    },
+    "ACCEPTED|CI_GREEN": {
+      "commitPattern": "^[0-9a-f]{40}$",
+      "ciRunPattern": "^[1-9][0-9]*$",
+      "nextActionTemplate": "ADVANCE_AFTER_{workBatch}"
+    }
+  },
+  "allowedTransitions": {
+    "ordinary": [
+      "NOT_STARTED->IMPLEMENTED|SELF_REVIEWED",
+      "IMPLEMENTED|SELF_REVIEWED->COMMITTED|CI_PENDING",
+      "COMMITTED|CI_PENDING->COMMITTED|CI_FAILED|FIX_REQUIRED",
+      "COMMITTED|CI_FAILED|FIX_REQUIRED->COMMITTED|CI_PENDING",
+      "COMMITTED|CI_PENDING->COMMITTED|CI_GREEN|CONTINUE_REQUIRED",
+      "COMMITTED|CI_PENDING->ACCEPTED|CI_GREEN"
+    ],
+    "highRisk": [
+      "NOT_STARTED->IMPLEMENTED|PENDING_REVIEW",
+      "IMPLEMENTED|PENDING_REVIEW->REVIEW_ACCEPTED|READY_TO_COMMIT",
+      "REVIEW_ACCEPTED|READY_TO_COMMIT->COMMITTED|CI_PENDING",
+      "COMMITTED|CI_PENDING->COMMITTED|CI_FAILED|FIX_REQUIRED",
+      "COMMITTED|CI_FAILED|FIX_REQUIRED->COMMITTED|CI_PENDING",
+      "COMMITTED|CI_PENDING->COMMITTED|CI_GREEN|CONTINUE_REQUIRED",
+      "COMMITTED|CI_GREEN|CONTINUE_REQUIRED->IMPLEMENTED|PENDING_REVIEW",
+      "COMMITTED|CI_PENDING->ACCEPTED|CI_GREEN"
+    ]
+  },
+  "evidence": {
+    "root": "docs/current/evidence/phase-1",
+    "indexFileName": "README.md",
+    "attemptPattern": "^[A-Z0-9][A-Z0-9._-]*\\.attempt-(?:0[1-9]|[1-9][0-9])\\.md$",
+    "minimumIndexNonWhitespaceCharacters": 40,
+    "minimumAttemptNonWhitespaceCharacters": 160,
+    "rejectNestedDirectories": true
+  },
+  "hardBlockers": [
+    "CURRENT_AUTHORITY_CONFLICT",
+    "DIRTY_WORKTREE_SCOPE_UNKNOWN",
+    "BRANCH_MISMATCH",
+    "SDK_REFERENCE_UNSAFE",
+    "AUTODESK_BINARY_DETECTED",
+    "LOOPBACK_POLICY_VIOLATION",
+    "SECURITY_DEFAULT_REGRESSION",
+    "CONTRACT_MISMATCH",
+    "REVIEW_REQUIRED",
+    "CI_EXACT_HEAD_MISMATCH",
+    "CI_FAILED",
+    "EVIDENCE_INVALID",
+    "NEXT_ACTION_MISMATCH"
+  ]
+}

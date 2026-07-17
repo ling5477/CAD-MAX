@@ -13,13 +13,16 @@ localhost Host, SDK-free plugin boundary, tests, CI, and security documentation.
 
 Bind AutoCAD 2025/2026 managed assemblies through local configuration. Implement
 plugin lifecycle, localhost bridge registration, health, version, document-context
-queue, cancellation, and truthful connection status. No general write tools.
+queue, cancellation, truthful connection status, bounded read-only document/object
+inspection, selection accuracy, preview, and Golden DWG evidence. No write, destructive,
+script, AutoLISP, command-string, or general mutation tools.
 
-## Phase 2: Read-Only Drawing Inspection
+## Phase 2: Read-Only Scale and Hardening
 
-Read active-document metadata, units, layers, blocks, selections, and bounded entity
-summaries. Add pagination, size limits, document identity without leaking full paths,
-and disposable-fixture integration tests.
+Extend the accepted Phase 1 read-only baseline only after closeout planning. Candidate
+scope includes large-drawing performance, additional bounded query filters, operational
+hardening, and broader fixture coverage; Phase 1 closeout authority will define the exact
+allowed work and must not pre-authorize mutation.
 
 ## Phase 3: Basic Entity Editing
 

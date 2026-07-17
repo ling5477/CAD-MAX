@@ -8,6 +8,8 @@
 2. [ROADMAP.md](ROADMAP.md)：当前下一允许动作，不能覆盖 STATUS。
 3. [README.md](README.md) 与仓库根 `README.md`：入口和短摘要。
 4. [GOVERNANCE_WORKFLOW.md](GOVERNANCE_WORKFLOW.md)：执行、review、提交、CI 与回滚规则。
+5. [PHASE_1_AUTOCAD_CONNECTION_PLAN.md](PHASE_1_AUTOCAD_CONNECTION_PLAN.md)：Phase 1 active plan 与 numbered work-batch 顺序；不决定 current Phase。
+6. [CODEX_PROJECT_INSTRUCTIONS.md](CODEX_PROJECT_INSTRUCTIONS.md) 与 [CAD_MAX_CODEX_TASK_TEMPLATES.md](CAD_MAX_CODEX_TASK_TEMPLATES.md)：稳定 agent 规则与任务模板；不得复制 current authority。
 
 ## Capability Facts
 
@@ -23,6 +25,14 @@
 
 - [TESTING.md](TESTING.md)：append-only 验证证据；失败和重跑都保留。
 - [WORKLOG.md](WORKLOG.md)：append-only 工作证据；不决定当前 Phase。
+- [evidence/phase-1/README.md](evidence/phase-1/README.md)：高风险/authority/真实 integration 的不可覆盖 attempt evidence；不决定当前 Phase。
+
+## Machine Contract
+
+- `scripts/docs/governance-workflow-contract.json`：authority schema、work-batch status、allowed transition、
+  fixed security facts、evidence naming 与 hard blocker 的唯一机器合同。
+- `scripts/docs/check-current-authority.ps1`：读取该 contract，校验 STATUS/ROADMAP/evidence；不访问网络。
+- `scripts/docs/test-current-authority.ps1`：正例与 fail-closed 负例 regression。
 
 ## Historical Evidence
 

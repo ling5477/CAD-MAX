@@ -196,7 +196,9 @@ work on backed-up test drawings when a future write phase is enabled. See
 
 The ordered delivery plan is in [ROADMAP.md](docs/ROADMAP.md). Phase 1 will establish
 a real AutoCAD 2025/2026 connection and lifecycle boundary without enabling arbitrary
-DWG editing.
+DWG editing. The executable read-only scope and numbered work batches are in the
+[Phase 1 AutoCAD Connection plan](docs/current/PHASE_1_AUTOCAD_CONNECTION_PLAN.md);
+that plan does not replace current authority.
 
 ## License
 

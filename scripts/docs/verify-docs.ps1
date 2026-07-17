@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-运行 CAD-MAX 文档治理回归、current authority 与 Markdown link checks。
+运行 CAD-MAX machine contract/authority 回归、current authority 与 Markdown link checks。
 #>
 [CmdletBinding()]
 param()
@@ -23,7 +23,7 @@ function Invoke-CheckedScript {
 }
 
 Invoke-CheckedScript `
-    -Name 'current authority regression' `
+    -Name 'governance contract and current authority regression' `
     -Path (Join-Path $PSScriptRoot 'test-current-authority.ps1')
 Invoke-CheckedScript `
     -Name 'current authority' `

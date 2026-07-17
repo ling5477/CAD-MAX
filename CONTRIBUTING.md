@@ -11,8 +11,22 @@ Before opening a pull request:
 
     .\scripts\verify.ps1
 
+Documentation-only changes must at least run:
+
+    .\scripts\docs\verify-docs.ps1
+
 Do not skip failing checks, use continue-on-error, or remove a valid assertion to make
 CI green.
+
+## Current authority and docs budget
+
+- Read `docs/current/STATUS.md` before changing code or documentation.
+- Ordinary code tasks do not update docs by default; if evidence is needed, append at
+  most one factual entry to `docs/current/WORKLOG.md`.
+- Validation baseline changes may append `TESTING.md` and `WORKLOG.md`.
+- Only a Phase/next-action transition updates current `STATUS.md` and `ROADMAP.md`.
+- Never rewrite a failed ledger entry as passed; append the remediation and rerun.
+- CI is green only when the run for the exact `origin/dev` HEAD succeeds.
 
 ## Scope discipline
 

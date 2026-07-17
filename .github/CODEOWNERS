@@ -1,0 +1,8 @@
+# Governance and safety-sensitive paths require repository-owner review when branch
+# protection enables CODEOWNERS enforcement.
+/AGENTS.md @ling5477
+/.github/workflows/ @ling5477
+/contracts/ @ling5477
+/docs/current/ @ling5477
+/scripts/docs/ @ling5477
+/src/dotnet/CadMax.AutoCAD.Plugin/ @ling5477

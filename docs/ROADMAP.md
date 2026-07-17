@@ -1,5 +1,9 @@
 # CAD-MAX roadmap
 
+This file defines the capability sequence. Current Phase status and the only allowed
+next action are authoritative in [current STATUS](current/STATUS.md) and
+[current ROADMAP](current/ROADMAP.md).
+
 ## Phase 0: Repository Bootstrap
 
 Python MCP transports, versioned contracts, fail-closed backends, .NET bridge core,

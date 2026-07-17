@@ -6,6 +6,7 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $env:DOTNET_CLI_HOME = Join-Path $repositoryRoot '.tools\dotnet-home'
 $env:NUGET_PACKAGES = Join-Path $repositoryRoot '.tools\nuget-packages'
 $pytestTemp = Join-Path $repositoryRoot '.tools\pytest-temp'
+$powerShellExecutable = (Get-Process -Id $PID).Path
 
 function Invoke-Checked {
     param(
@@ -53,6 +54,9 @@ try {
     Invoke-Checked 'mypy' { & $uv run mypy src/python }
     Invoke-Checked 'pytest' { & $uv run pytest --basetemp $pytestTemp }
     Invoke-Checked 'doctor smoke' { & $uv run cad-max-mcp doctor }
+    Invoke-Checked 'documentation governance' {
+        & $powerShellExecutable -NoLogo -NoProfile -File 'scripts\docs\verify-docs.ps1'
+    }
     Invoke-Checked 'dotnet restore' {
         & $dotnet restore 'src\dotnet\CadMax.sln' --locked-mode --configfile 'NuGet.Config'
     }

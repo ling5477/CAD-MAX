@@ -9,6 +9,7 @@ on:
     branches:
       - dev
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,6 +19,37 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  governance:
+    name: Governance
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changed-file whitespace
+        shell: pwsh
+        run: |
+          if ('${{ github.event_name }}' -eq 'pull_request') {
+            git diff --check "origin/${{ github.base_ref }}...HEAD"
+          }
+          elseif ('${{ github.event_name }}' -eq 'push' -and
+                  '${{ github.event.before }}' -ne '0000000000000000000000000000000000000000') {
+            git diff --check '${{ github.event.before }}' '${{ github.sha }}'
+          }
+          else {
+            git show --check --pretty=format: HEAD
+          }
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Verify documentation governance
+        shell: pwsh
+        run: ./scripts/docs/verify-docs.ps1
+
   python:
     name: Python 3.12
     runs-on: ubuntu-latest

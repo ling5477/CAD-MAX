@@ -5,6 +5,13 @@ a Python MCP server and a localhost C# bridge.
 
 Current version: 0.1.0, Phase 0 repository bootstrap.
 
+## Project governance / 项目治理
+
+当前 Phase、下一允许动作和安全能力状态以
+[current status](docs/current/STATUS.md) 顶部的 `cad-max-current-authority` 区块为唯一
+authority。事实源职责、文档预算、验证证据和 CI 生命周期见
+[current docs](docs/current/README.md)。任何 CI 绿色都不表示真实 AutoCAD 或 DWG 能力已实现。
+
 ## Current real completion
 
 Implemented now:

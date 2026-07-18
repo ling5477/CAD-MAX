@@ -9,10 +9,10 @@ accepted_work_batch_status=ACCEPTED|CI_GREEN
 accepted_work_batch_commit=d149162938b239948048662c9db342c4a0b1fce3
 accepted_work_batch_ci_run=29641896446
 work_batch=PHASE_1_MAINTENANCE_DEPENDENCIES
-work_batch_status=COMMITTED|CI_PENDING
-work_batch_commit=PENDING
-work_batch_ci_run=PENDING
-next_action=PHASE_1_MAINTENANCE_DEPENDENCIES_CI_WAIT_OR_INVESTIGATION
+work_batch_status=COMMITTED|CI_GREEN|CONTINUE_REQUIRED
+work_batch_commit=41950edefe523ccfb9ea03cb3a91ae1ba0326dbf
+work_batch_ci_run=29644342972
+next_action=CONTINUE_PHASE_1_MAINTENANCE_DEPENDENCIES
 autocad_runtime=NOT_CONNECTED
 dwg_read=NOT_IMPLEMENTED
 dwg_write=NOT_IMPLEMENTED
@@ -37,15 +37,16 @@ authority。其他文档只能解释或链接本文件，不得建立独立状�
   `d149162938b239948048662c9db342c4a0b1fce3` 的 exact-head CI run `29641896446` 中 Governance、
   Python 3.12、.NET 8 全部成功；AutoCAD 2025 已取得真实 plugin load、status command、Initialize
   与 Terminate evidence，AutoCAD 2026 因未安装保持 `NOT_RUN`。
-- PHASE_1_MAINTENANCE_DEPENDENCIES：`COMMITTED / CI_PENDING`；Group A 候选在本提交成文时尚无可
-  自引用的 commit SHA 或 CI run，因此字段使用 contract 允许的 `PENDING`，不得据此宣称 CI 绿色。
+- PHASE_1_MAINTENANCE_DEPENDENCIES：`COMMITTED / CI_GREEN / CONTINUE_REQUIRED`；Group A candidate
+  `41950edefe523ccfb9ea03cb3a91ae1ba0326dbf` 的 exact-head CI run `29644342972` 中 Governance、
+  Python 3.12、.NET 8 全部成功；同一 maintenance batch 的 .NET 依赖组仍需继续。
 - PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE：仍为 `NOT_STARTED`（未开始）；依赖维护接受前不得启动。
 
 ## 唯一下一动作
 
-`PHASE_1_MAINTENANCE_DEPENDENCIES_CI_WAIT_OR_INVESTIGATION`：提交并推送 Group A 候选后，只允许核对
-该 exact HEAD 的 Governance、Python 3.12、.NET 8 jobs 与 Node runtime annotations；失败时进入最小
-CI blocker 修复，不得启动 Phase 1.2 或宣称 maintenance accepted。
+`CONTINUE_PHASE_1_MAINTENANCE_DEPENDENCIES`：只允许继续已授权的 .NET patch/runner 组与独立
+`Microsoft.NET.Test.Sdk 18.8.1` 组，分别执行本地验证、review、commit/push 与 exact-head CI；不得
+启动 Phase 1.2 或宣称 maintenance accepted。
 
 ## 固定安全事实
 

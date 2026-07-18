@@ -5,15 +5,15 @@
 
 ## 当前允许动作
 
-`PHASE_1_MAINTENANCE_DEPENDENCIES_CI_WAIT_OR_INVESTIGATION`
+`CONTINUE_PHASE_1_MAINTENANCE_DEPENDENCIES`
 
 只允许完成以下单一 work batch：
 
-1. 提交并推送 Group A 候选到 `dev`；
-2. 核对候选 SHA 与 `origin/dev`、GitHub Actions run 的 `headSha` 精确一致；
-3. 要求 Governance、Python 3.12、.NET 8 全部成功；
-4. 精确记录 Node runtime annotations 的 Action 来源；
-5. CI 绿色后关闭 #1–#4，并继续同一 maintenance batch 的 .NET 依赖组。
+1. 将 `Microsoft.AspNetCore.Mvc.Testing` 更新到 `8.0.29`；
+2. 将所有直接引用的 `xunit.runner.visualstudio` 更新到 `3.1.5`；
+3. 受控更新对应 lockfile，并验证 test discovery、warnings 与 adapter load；
+4. Group B exact-head CI 绿色后关闭 #7/#9；
+5. 单独升级并验证 `Microsoft.NET.Test.Sdk 18.8.1`，不得混入其他依赖。
 
 ## 当前禁止
 

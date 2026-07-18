@@ -106,3 +106,38 @@ closeout 的已发生事实只追加到本文件，不用未来 SHA/run 替换�
   真实执行后追加；当前已知限制不得写成 PASS。
 - Rollback：已推送后按组使用 `git revert <Group C>`、`git revert <Group B>`、
   `git revert <Group A>`；authority closeout 单独 revert。禁止 reset/force push。
+
+## 2026-07-18 / Group A exact-head CI 与 PR #1–#6 cleanup
+
+- Group A commit：`41950edefe523ccfb9ea03cb3a91ae1ba0326dbf`；push 后
+  `HEAD == origin/dev`，worktree clean。
+- Group A CI run：`29644342972`，`headSha` 与 Group A commit 精确一致，`completed / success`。
+- Group A jobs：Governance `success`（job `88079940700`）、Python 3.12 `success`
+  （job `88079940729`）、.NET 8 `success`（job `88079940705`）。
+- Node runtime annotations：逐个读取上述 check-run annotations，三个 job 均为空；本任务升级的
+  `checkout@v7`、`setup-python@v6`、`setup-uv@v7`、`setup-dotnet@v6` 未产生 Node.js 20 deprecation，
+  也没有其他未消除 annotation。
+- PR #5/#6：确认 `pytest>=8.4,<9` 与 `mypy>=1.17,<2` 不变后，分别用保留 major ceiling 的说明
+  显式关闭。
+- PR #1–#4：Group A push 后由 Dependabot 自动识别 current `dev` 已覆盖并关闭；随后每个 PR 均补充
+  包含 Group A commit 与 run `29644342972` 的审计说明，核验每个 PR 恰有一条匹配说明。
+- PR close state：#1、#2、#3、#4、#5、#6 均为 `CLOSED`；#7、#8、#9 此时仍 open。
+- Authority：Group A exact-head green 后记录为
+  `COMMITTED|CI_GREEN|CONTINUE_REQUIRED`；maintenance 未 accepted，Phase 1.2 未开始。
+
+## 2026-07-18 / Group B .NET patch 与 runner 本地验证
+
+- Direct reference scope：3 个 test projects 均直接引用 `xunit.runner.visualstudio`，全部从 `3.0.2`
+  更新到 `3.1.5`；只有 `CadMax.Bridge.Core.Tests` 直接引用
+  `Microsoft.AspNetCore.Mvc.Testing`，从 `8.0.23` 更新到 `8.0.29`。
+- `Microsoft.NET.Test.Sdk` 在三个 test projects 中均保持 `17.12.0`；xUnit、生产依赖、target framework、
+  .NET SDK 与业务代码未变。
+- 受控 restore：`dotnet restore ... --force-evaluate` 成功；随后 `--locked-mode` restore 成功。restore
+  未输出 warning。机械 EOF 变更已从无关 lockfile 消除，语义 lock diff 仅涉及上述直接依赖与
+  `Microsoft.AspNetCore.TestHost 8.0.29` 对应传递更新。
+- Release build：成功，`0 warnings / 0 errors`。
+- Test discovery/result：Contracts `1/1`、Plugin `15/15`、Bridge Core `8/8`，合计
+  `24 passed / 0 skipped / 0 failed`，与 baseline 一致，没有无解释减少。
+- Adapter：三个 test projects 均加载 `xUnit.net VSTest Adapter v3.1.5`；未见 adapter load、testhost
+  或 protocol negotiation 错误。
+- Group B commit/run/jobs：`PENDING / NOT_RUN`；#7/#9 尚不得关闭。

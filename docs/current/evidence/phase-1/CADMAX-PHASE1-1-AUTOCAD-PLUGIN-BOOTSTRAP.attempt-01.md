@@ -96,16 +96,27 @@ Risk classification：`HIGH_RISK`；涉及 Autodesk 专有 SDK、本机 AutoCAD 
 - Independent review：Codex Security diff scan reportable finding `0`；CodeRabbit 对 `.github`、
   `packaging`、`docs`、plugin core、SDK adapter、plugin tests 与 `scripts` 完成 scoped review。
   早期 Major/Minor 已逐项修复并重跑，最终所有 scope 均明确返回 `review_completed / findings=0`；
-  接受结论 `P0=0 / P1=0 / REVIEW_ACCEPTED|READY_TO_COMMIT`。
+  原完整 diff 接受结论 `P0=0 / P1=0 / REVIEW_ACCEPTED|READY_TO_COMMIT`。CI 退出码单行修复另由
+  Codex Security focused diff scan `f536c81c-36c2-4da3-8dba-fc569d3107fc` 完成 `1/1` coverage receipt，
+  reportable finding `0`；CodeRabbit CLI 新实例在 OAuth 后返回 `fetching_user / Failed to fetch user
+  data`，因此未将该修复虚报为新的 CodeRabbit review。
 - DWG access：无实现；network listener：无新增；write/script 固定关闭；MCP capability 无变化。
 
 ## Candidate and closeout
 
-- Candidate commit：`UNCOMMITTED`。
-- Candidate CI run/jobs：`NOT_RUN`。
-- Closeout commit：`NOT_RUN`。
-- Closeout CI run/jobs：`NOT_RUN`。
-- Current authority 保持 Phase 1.1 `NOT_STARTED`；`STATUS.md` 与 current `ROADMAP.md` 尚未修改。
+- Implementation commit：`dfb11cb9acfed60cc4ef246f55018240ac5e8cb4`；首次 exact-head CI run
+  `29640778847` 中 Python 3.12 与 .NET 8 成功，Governance 失败。RCA 为 safety test 脚本在全部断言
+  通过后继承预期失败子进程的 `$LASTEXITCODE=1`。
+- Final candidate commit：`d149162938b239948048662c9db342c4a0b1fce3`；仅在统一失败闸门和 PASS
+  输出后显式 `exit 0`，未改变断言或安全边界。
+- Candidate CI run/jobs：`29641896446 / completed / success`；Governance、Python 3.12、.NET 8
+  全部成功，head SHA 与 final candidate 精确一致。
+- Closeout commit：本 attempt 更新所在的 docs-only commit，成文时 SHA 尚未生成且不可自引用。
+- Closeout CI run/jobs：成文时 `NOT_RUN`；推送后必须验证 closeout exact HEAD，并只在最终报告记录，
+  不创建第三个纯 attestation commit。
+- Final authority：接受 `PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP / ACCEPTED|CI_GREEN`；初始化
+  `PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE / NOT_STARTED`；下一动作
+  `IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE`。固定安全事实保持不变。
 
 ## Known limitations
 

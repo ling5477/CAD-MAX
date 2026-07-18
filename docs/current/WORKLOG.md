@@ -46,3 +46,22 @@
 - Schema 2 authority 已验证；唯一下一动作保持
   `IMPLEMENT_PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP`，该 batch 仍为 `NOT_STARTED`。
 - 本条只追记已发生的 closeout Git/CI 事实；不启动 plugin bootstrap，不改变 AutoCAD/DWG 安全状态。
+
+## 2026-07-18 / CADMAX-PHASE1-1-AUTOCAD-PLUGIN-BOOTSTRAP closeout
+
+- SDK-free plugin core、独立 SDK-bound adapter、开发 `.bundle`、安全安装/卸载脚本、生命周期 evidence
+  与失败路径测试已完成；未实现 MCP-to-AutoCAD 通信、document/DWG 访问或 listener。
+- AutoCAD 2025 已完成官方 bundle loader 真实加载、`CADMAXPLUGINSTATUS`、Initialize 与正常关闭后的
+  Terminate 验收；AutoCAD 2026 未安装并保持 `NOT_RUN`。开发 bundle 已按固定 ProductCode 精确卸载。
+- Implementation commit `dfb11cb9acfed60cc4ef246f55018240ac5e8cb4` 的首次 run `29640778847`
+  暴露 PowerShell 成功退出码归一化缺陷；最小修复后的最终 candidate
+  `d149162938b239948048662c9db342c4a0b1fce3` 在 run `29641896446` 的 Governance、Python 3.12、
+  .NET 8 全绿。
+- 独立复核结论为 `P0=0 / P1=0 / REVIEW_ACCEPTED`；原完整 diff 与 focused CI 修复扫描均无可报告
+  finding。统一本地验证通过，固定安全事实未变化。
+- 本次 docs-only closeout 接受 `PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP / ACCEPTED|CI_GREEN`，初始化
+  `PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE / NOT_STARTED`；唯一下一动作变更为
+  `IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE`。
+- Closeout commit SHA 与 exact-head CI 在本文成文时尚不存在；完成后只在最终报告记录，不创建第三个
+  纯 attestation commit。AutoCAD runtime 继续为 `NOT_CONNECTED`，DWG read/write 继续为
+  `NOT_IMPLEMENTED`，write/script 继续为 `DISABLED`。

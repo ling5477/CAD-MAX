@@ -4,15 +4,15 @@
 authority_schema=2
 current_phase=PHASE_1
 phase_status=IN_PROGRESS|NOT_FROZEN
-accepted_work_batch=PHASE_1_PLAN
+accepted_work_batch=PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP
 accepted_work_batch_status=ACCEPTED|CI_GREEN
-accepted_work_batch_commit=f67eed18aa2658ab05c8aa4d8bd0ed9b8fcbe120
-accepted_work_batch_ci_run=29592363444
-work_batch=PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP
+accepted_work_batch_commit=d149162938b239948048662c9db342c4a0b1fce3
+accepted_work_batch_ci_run=29641896446
+work_batch=PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE
 work_batch_status=NOT_STARTED
 work_batch_commit=NONE
 work_batch_ci_run=NOT_RUN
-next_action=IMPLEMENT_PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP
+next_action=IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE
 autocad_runtime=NOT_CONNECTED
 dwg_read=NOT_IMPLEMENTED
 dwg_write=NOT_IMPLEMENTED
@@ -33,14 +33,18 @@ authority。其他文档只能解释或链接本文件，不得建立独立状�
 - PHASE_1_PLAN：`ACCEPTED / CI GREEN`（已接受 / CI 已通过）；candidate
   `f67eed18aa2658ab05c8aa4d8bd0ed9b8fcbe120` 的 exact-head CI run `29592363444`
   中 Governance、Python 3.12、.NET 8 全部成功。
-- PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP：`NOT_STARTED`（未开始）；未产生 implementation commit，
+- PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP：`ACCEPTED / CI GREEN`（已接受 / CI 已通过）；最终 candidate
+  `d149162938b239948048662c9db342c4a0b1fce3` 的 exact-head CI run `29641896446` 中 Governance、
+  Python 3.12、.NET 8 全部成功；AutoCAD 2025 已取得真实 plugin load、status command、Initialize
+  与 Terminate evidence，AutoCAD 2026 因未安装保持 `NOT_RUN`。
+- PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE：`NOT_STARTED`（未开始）；未产生 implementation commit，
   未运行该 batch 的 CI。
 
 ## 唯一下一动作
 
-`IMPLEMENT_PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP`：只允许建立 AutoCAD 2025/2026 .NET 8 plugin
-项目边界、本机 Autodesk DLL 安全引用、开发 `.bundle` / `PackageContents.xml` 与 load/unload 证据；
-不允许图纸读取、DWG 修改、write/script tool 或下一 work batch 实现。执行细节见
+`IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE`：只允许建立 plugin 内 `127.0.0.1` HTTP、token、
+health/version/capabilities 与 start/stop、端口及退出清理生命周期；不允许 document API、图纸读取、
+DWG 修改、write/script tool 或下一 work batch 实现。执行细节见
 [Phase 1 主计划](PHASE_1_AUTOCAD_CONNECTION_PLAN.md)。
 
 ## 固定安全事实
@@ -53,5 +57,5 @@ authority。其他文档只能解释或链接本文件，不得建立独立状�
 - allow script：`DISABLED`（关闭）。
 - HTTP binding：`LOOPBACK ONLY`（仅回环地址）。
 
-CI 绿色只接受 Phase 1 plan/governance candidate，不代表 AutoCAD、Autodesk SDK、plugin load、DWG
-读取或 DWG 修改已实现。
+Phase 1.1 的 AutoCAD 2025 真实加载证据只证明 plugin bootstrap 边界；尚未建立 Python MCP →
+loopback Bridge → AutoCAD 连接，不代表 AutoCAD runtime 已连接，也不代表 DWG read/write 已实现。

@@ -56,3 +56,24 @@
   workflow 升级不属于本 work batch，后续单独评估。
 - 本条与 attempt-01 对 closeout SHA/run 的追记将形成 evidence attestation commit；该 commit 仍需自身
   exact-head CI，不能把本 run 当作 attestation run。
+
+## 2026-07-18 / Phase 1.1 plugin bootstrap candidate acceptance
+
+- Implementation commit `dfb11cb9acfed60cc4ef246f55018240ac5e8cb4` 已 push；首次 exact-head CI run
+  `29640778847` 中 Python 3.12 与 .NET 8 成功，Governance 的 AutoCAD script safety step 失败。
+- RCA：18 个 PowerShell safety assertions 实际全部通过，但最后一个预期失败子进程留下
+  `$LASTEXITCODE=1`，脚本在 GitHub Actions 直接调用时继承该退出码。最小修复 commit
+  `d149162938b239948048662c9db342c4a0b1fce3` 在统一失败闸门与 PASS 输出后显式 `exit 0`；未删除、
+  跳过或放宽测试。
+- 最终 candidate `d149162938b239948048662c9db342c4a0b1fce3` 的 exact-head CI run
+  `29641896446` 为 `completed / success`；Governance、Python 3.12、.NET 8 全部成功。
+- `scripts/verify.ps1`：PASS；Python `16/16`、默认 .NET `24/24`（其中 plugin tests `15/15`）、
+  PowerShell safety `18/18`，build 0 warning / 0 error，docs/authority 与固定安全默认值全部通过。
+- AutoCAD 2025 SDK-bound adapter build、bundle validation 与真实加载均为 `PASS`；
+  `CADMAXPLUGINSTATUS` 返回 `READY`，且 `readOnly=true / allowWrite=false / allowScript=false`；正常退出后
+  Initialize/Terminate 四事件完整。AutoCAD 2026 未安装，保持 `NOT_RUN`。
+- 原完整 diff Codex Security 与 CodeRabbit 最终 scoped reviews 均为 reportable finding `0`；CI 单行修复的
+  focused Codex Security scan `f536c81c-36c2-4da3-8dba-fc569d3107fc` 亦为 finding `0`。CodeRabbit CLI
+  新实例在 OAuth 后无法取得 user data，因此不得宣称单行修复获得新的 CodeRabbit review。
+- 本条所在 docs-only closeout commit 的 SHA 在成文时不可自引用，且其 exact-head CI 尚未运行；结果只在
+  最终报告中记录，不创建第三个纯 attestation commit。

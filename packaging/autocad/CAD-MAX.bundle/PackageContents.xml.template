@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Autodesk source: AutoCAD 2025 Developer and ObjectARX Help,
+  "PackageContents.xml Format Reference" and "RuntimeRequirements Element Reference".
+  Series values are generated per target: AutoCAD 2025=R25.0, AutoCAD 2026=R25.1.
+-->
+<ApplicationPackage
+  SchemaVersion="1.0"
+  AutodeskProduct="AutoCAD"
+  Name="CAD-MAX"
+  Description="CAD-MAX read-only plugin lifecycle bootstrap"
+  AppVersion="{{APP_VERSION}}"
+  ProductCode="{D15A06D8-5024-4C70-B77D-8AA4B9A74B20}"
+  UpgradeCode="{EDC7CB3B-DFCF-466F-9061-0DA05C669CF2}">
+  <Components>
+    <RuntimeRequirements
+      OS="Win64"
+      Platform="AutoCAD"
+      SeriesMin="{{AUTOCAD_SERIES}}"
+      SeriesMax="{{AUTOCAD_SERIES}}" />
+    <ComponentEntry
+      AppName="CAD-MAX"
+      AppDescription="CAD-MAX read-only plugin lifecycle bootstrap"
+      AppType=".Net"
+      Version="{{APP_VERSION}}"
+      ModuleName="./Contents/Windows/CadMax.AutoCAD.Adapter.dll"
+      LoadReasons="LoadOnAutoCADStartup">
+      <Commands GroupName="CADMAX">
+        <Command Global="CADMAXPLUGINSTATUS" Local="CADMAXPLUGINSTATUS" />
+      </Commands>
+    </ComponentEntry>
+  </Components>
+</ApplicationPackage>

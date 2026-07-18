@@ -54,6 +54,10 @@ try {
     Invoke-Checked 'mypy' { & $uv run mypy src/python }
     Invoke-Checked 'pytest' { & $uv run pytest --basetemp $pytestTemp }
     Invoke-Checked 'doctor smoke' { & $uv run cad-max-mcp doctor }
+    Invoke-Checked 'AutoCAD script safety boundaries' {
+        & $powerShellExecutable -NoLogo -NoProfile -File `
+            'scripts\autocad\Test-AutoCADScripts.ps1'
+    }
     Invoke-Checked 'documentation governance' {
         & $powerShellExecutable -NoLogo -NoProfile -File 'scripts\docs\verify-docs.ps1'
     }

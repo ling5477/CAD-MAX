@@ -50,6 +50,10 @@ jobs:
         shell: pwsh
         run: ./scripts/docs/verify-docs.ps1
 
+      - name: Verify AutoCAD script safety boundaries
+        shell: pwsh
+        run: ./scripts/autocad/Test-AutoCADScripts.ps1
+
   python:
     name: Python 3.12
     runs-on: ubuntu-latest

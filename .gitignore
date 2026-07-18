@@ -32,6 +32,9 @@ htmlcov/
 **/acdbmgd.dll
 **/acmgd.dll
 **/accoremgd.dll
+**/AcDbMgd.dll
+**/AcMgd.dll
+**/AcCoreMgd.dll
 src/dotnet/CadMax.AutoCAD.Plugin/lib/
 
 # Windows sandbox cache artifact; never part of the repository

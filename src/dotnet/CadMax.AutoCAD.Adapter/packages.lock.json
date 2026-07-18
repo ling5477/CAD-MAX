@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net8.0-windows7.0": {
+      "cadmax.autocad.plugin": {
+        "type": "Project",
+        "dependencies": {
+          "CadMax.Bridge.Core": "[1.0.0, )",
+          "CadMax.Contracts": "[1.0.0, )"
+        }
+      },
+      "cadmax.bridge.core": {
+        "type": "Project",
+        "dependencies": {
+          "CadMax.Contracts": "[1.0.0, )"
+        }
+      },
+      "cadmax.contracts": {
+        "type": "Project"
+      }
+    }
+  }
+}

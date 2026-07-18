@@ -1,0 +1,11 @@
+<Project>
+  <!--
+    Copy this shape only through New-LocalSdkProps.ps1. The generated file belongs under
+    .tools/autocad/ and is ignored by Git. Never commit installation paths or Autodesk DLLs.
+  -->
+  <PropertyGroup>
+    <CadMaxAutoCADYear></CadMaxAutoCADYear>
+    <CadMaxAutoCADSdkRoot></CadMaxAutoCADSdkRoot>
+    <CadMaxAutoCADExecutable></CadMaxAutoCADExecutable>
+  </PropertyGroup>
+</Project>

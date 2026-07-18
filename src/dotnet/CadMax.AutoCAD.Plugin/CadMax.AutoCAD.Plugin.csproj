@@ -4,6 +4,7 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <AssemblyName>CadMax.AutoCAD.Plugin</AssemblyName>
     <RootNamespace>CadMax.AutoCAD.Plugin</RootNamespace>
+    <Version>0.1.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\CadMax.Contracts\CadMax.Contracts.csproj" />

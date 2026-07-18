@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AssemblyName>CadMax.AutoCAD.Adapter</AssemblyName>
+    <RootNamespace>CadMax.AutoCAD.Adapter</RootNamespace>
+    <Version>0.1.0</Version>
+    <CadMaxAutoCADLocalProps Condition="'$(CadMaxAutoCADLocalProps)' == ''">$(MSBuildThisFileDirectory)..\..\..\.tools\autocad\CadMax.AutoCAD.Local.props</CadMaxAutoCADLocalProps>
+  </PropertyGroup>
+
+  <Import Project="$(CadMaxAutoCADLocalProps)" Condition="Exists('$(CadMaxAutoCADLocalProps)')" />
+
+  <ItemGroup>
+    <ProjectReference Include="..\CadMax.AutoCAD.Plugin\CadMax.AutoCAD.Plugin.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(CadMaxAutoCADSdkRoot)' != ''">
+    <Reference Include="AcMgd">
+      <HintPath>$(CadMaxAutoCADSdkRoot)\AcMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="AcDbMgd">
+      <HintPath>$(CadMaxAutoCADSdkRoot)\AcDbMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="AcCoreMgd">
+      <HintPath>$(CadMaxAutoCADSdkRoot)\AcCoreMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="CadMaxAutoCADYear" Value="$(CadMaxAutoCADYear)" />
+  </ItemGroup>
+
+  <Target Name="ValidateCadMaxAutoCADSdk" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(CadMaxAutoCADLocalProps)')" Text="SDK_CONFIG_MISSING" />
+    <Error Condition="'$(CadMaxAutoCADYear)' == ''" Text="SDK_CONFIG_YEAR_INVALID" />
+    <Error Condition="'$(CadMaxAutoCADSdkRoot)' == ''" Text="SDK_CONFIG_PATHS_MISSING" />
+    <Exec Command="powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\..\scripts\autocad\Test-AutoCADSdkBoundary.ps1&quot; -AutoCADYear $(CadMaxAutoCADYear) -PropsPath &quot;$(CadMaxAutoCADLocalProps)&quot;" />
+  </Target>
+</Project>

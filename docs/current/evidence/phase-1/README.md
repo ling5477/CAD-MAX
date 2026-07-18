@@ -14,3 +14,4 @@ attempt evidence。它不决定 current Phase；唯一 authority 仍是 [../../S
 ## Attempts
 
 - [CADMAX-PHASE1-PLAN-AND-GOVERNANCE-SYNC.attempt-01.md](CADMAX-PHASE1-PLAN-AND-GOVERNANCE-SYNC.attempt-01.md)
+- [CADMAX-PHASE1-1-AUTOCAD-PLUGIN-BOOTSTRAP.attempt-01.md](CADMAX-PHASE1-1-AUTOCAD-PLUGIN-BOOTSTRAP.attempt-01.md)

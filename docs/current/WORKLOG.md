@@ -65,3 +65,25 @@
 - Closeout commit SHA 与 exact-head CI 在本文成文时尚不存在；完成后只在最终报告记录，不创建第三个
   纯 attestation commit。AutoCAD runtime 继续为 `NOT_CONNECTED`，DWG read/write 继续为
   `NOT_IMPLEMENTED`，write/script 继续为 `DISABLED`。
+
+## 2026-07-18 / CADMAX-DEPENDABOT-PR-CLEANUP-AND-DEPENDENCY-MAINTENANCE closeout
+
+- Group A/B/C 分别以 `41950edefe523ccfb9ea03cb3a91ae1ba0326dbf`、
+  `c99f855212ed96cad751b0807da34a54deea362a`、
+  `ba69004657adaef217ed12dd99adbb07ec1e2be9` 独立提交并取得 exact-head CI 全绿。
+- GitHub Actions 已升级到 `checkout@v7`、`setup-python@v6`、`setup-uv@v7`、`setup-dotnet@v6`；
+  Dependabot 已按授权建立 Actions 分组、Python major-ignore 与精确 NuGet 分组。
+- Python major ceiling 未放宽；.NET test dependencies 最终为
+  `Microsoft.AspNetCore.Mvc.Testing 8.0.29`、`xunit.runner.visualstudio 3.1.5`、
+  `Microsoft.NET.Test.Sdk 18.8.1`。本地最终 test discovery 保持 `24/24`。
+- PR #1–#9 均为 `CLOSED`，open Dependabot PR count 为 `0`；#5/#6 因保留 major ceiling 关闭，
+  其余 PR 由 current-dev replacement commits 覆盖并留有 commit/run 审计说明。
+- 独立 Codex Security review 对 Group B/C 均为 complete coverage、reportable finding `0`，结论
+  `P0=0 / P1=0 / REVIEW_ACCEPTED`。Group C CodeRabbit 完整 10 分钟运行超时且无 review 输出，
+  因此不声明 CodeRabbit issue count。
+- 本次 docs-only closeout 接受 `PHASE_1_MAINTENANCE_DEPENDENCIES / ACCEPTED|CI_GREEN`，并恢复
+  `PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE / NOT_STARTED` 为 current work batch；唯一下一动作是
+  `IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE`，但本任务未启动 Phase 1.2。
+- Closeout commit SHA 与 exact-head CI 在本文成文时尚不存在；完成后只在最终报告记录。固定安全事实
+  保持不变：AutoCAD runtime `NOT_CONNECTED`、DWG read/write `NOT_IMPLEMENTED`、read-only
+  `ENABLED`、write/script `DISABLED`、HTTP `LOOPBACK_ONLY`。

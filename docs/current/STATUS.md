@@ -4,15 +4,15 @@
 authority_schema=2
 current_phase=PHASE_1
 phase_status=IN_PROGRESS|NOT_FROZEN
-accepted_work_batch=PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP
+accepted_work_batch=PHASE_1_MAINTENANCE_DEPENDENCIES
 accepted_work_batch_status=ACCEPTED|CI_GREEN
-accepted_work_batch_commit=d149162938b239948048662c9db342c4a0b1fce3
-accepted_work_batch_ci_run=29641896446
-work_batch=PHASE_1_MAINTENANCE_DEPENDENCIES
-work_batch_status=COMMITTED|CI_GREEN|CONTINUE_REQUIRED
-work_batch_commit=41950edefe523ccfb9ea03cb3a91ae1ba0326dbf
-work_batch_ci_run=29644342972
-next_action=CONTINUE_PHASE_1_MAINTENANCE_DEPENDENCIES
+accepted_work_batch_commit=ba69004657adaef217ed12dd99adbb07ec1e2be9
+accepted_work_batch_ci_run=29647121269
+work_batch=PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE
+work_batch_status=NOT_STARTED
+work_batch_commit=NONE
+work_batch_ci_run=NOT_RUN
+next_action=IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE
 autocad_runtime=NOT_CONNECTED
 dwg_read=NOT_IMPLEMENTED
 dwg_write=NOT_IMPLEMENTED
@@ -37,16 +37,18 @@ authority。其他文档只能解释或链接本文件，不得建立独立状�
   `d149162938b239948048662c9db342c4a0b1fce3` 的 exact-head CI run `29641896446` 中 Governance、
   Python 3.12、.NET 8 全部成功；AutoCAD 2025 已取得真实 plugin load、status command、Initialize
   与 Terminate evidence，AutoCAD 2026 因未安装保持 `NOT_RUN`。
-- PHASE_1_MAINTENANCE_DEPENDENCIES：`COMMITTED / CI_GREEN / CONTINUE_REQUIRED`；Group A candidate
-  `41950edefe523ccfb9ea03cb3a91ae1ba0326dbf` 的 exact-head CI run `29644342972` 中 Governance、
-  Python 3.12、.NET 8 全部成功；同一 maintenance batch 的 .NET 依赖组仍需继续。
-- PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE：仍为 `NOT_STARTED`（未开始）；依赖维护接受前不得启动。
+- PHASE_1_MAINTENANCE_DEPENDENCIES：`ACCEPTED / CI GREEN`（已接受 / CI 已通过）；最终 implementation
+  candidate `ba69004657adaef217ed12dd99adbb07ec1e2be9` 的 exact-head CI run `29647121269` 中
+  Governance、Python 3.12、.NET 8 全部成功；该插入式维护批次不代表 CAD 能力推进。
+- PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE：`NOT_STARTED`（未开始）；未产生 implementation commit，
+  未运行该 batch 的 CI。
 
 ## 唯一下一动作
 
-`CONTINUE_PHASE_1_MAINTENANCE_DEPENDENCIES`：只允许继续已授权的 .NET patch/runner 组与独立
-`Microsoft.NET.Test.Sdk 18.8.1` 组，分别执行本地验证、review、commit/push 与 exact-head CI；不得
-启动 Phase 1.2 或宣称 maintenance accepted。
+`IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE`：只允许建立 plugin 内 `127.0.0.1` HTTP、token、
+health/version/capabilities 与 start/stop、端口及退出清理生命周期；不允许 document API、图纸读取、
+DWG 修改、write/script tool 或下一 work batch 实现。执行细节见
+[Phase 1 主计划](PHASE_1_AUTOCAD_CONNECTION_PLAN.md)。
 
 ## 固定安全事实
 

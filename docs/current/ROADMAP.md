@@ -5,19 +5,18 @@
 
 ## 当前允许动作
 
-`CONTINUE_PHASE_1_MAINTENANCE_DEPENDENCIES`
+`IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE`
 
 只允许完成以下单一 work batch：
 
-1. 将 `Microsoft.AspNetCore.Mvc.Testing` 更新到 `8.0.29`；
-2. 将所有直接引用的 `xunit.runner.visualstudio` 更新到 `3.1.5`；
-3. 受控更新对应 lockfile，并验证 test discovery、warnings 与 adapter load；
-4. Group B exact-head CI 绿色后关闭 #7/#9；
-5. 单独升级并验证 `Microsoft.NET.Test.Sdk 18.8.1`，不得混入其他依赖。
+1. 在 AutoCAD plugin 内建立只绑定 `127.0.0.1` 的 HTTP 生命周期边界；
+2. 建立 token 校验与 health/version/capabilities 最小协议；
+3. 验证 listener start/stop、端口占用、异常退出和资源清理；
+4. 保持默认 solution/CI 在无 AutoCAD、无 Autodesk DLL 时可构建和测试；
+5. 对非 loopback 绑定、缺失/错误 token、重复启动和清理失败做 fail-closed 检查。
 
 ## 当前禁止
 
-- 启动或实现 Phase 1.2 的 listener、token、health/version/capabilities 或 lifecycle；
 - 访问 document API、active document 或读取/修改 DWG；
 - 实现 document context queue 或任何后续 numbered work batch；
 - 提交 Autodesk DLL/SDK、bundle 生成物、本机路径、许可证数据或凭证；

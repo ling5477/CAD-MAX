@@ -141,3 +141,77 @@ closeout 的已发生事实只追加到本文件，不用未来 SHA/run 替换�
 - Adapter：三个 test projects 均加载 `xUnit.net VSTest Adapter v3.1.5`；未见 adapter load、testhost
   或 protocol negotiation 错误。
 - Group B commit/run/jobs：`PENDING / NOT_RUN`；#7/#9 尚不得关闭。
+
+## 2026-07-18 / Group B exact-head CI、review 与 PR audit
+
+- Group B commit：`c99f855212ed96cad751b0807da34a54deea362a`；push 后
+  `HEAD == origin/dev`，worktree clean。
+- Group B CI run：`29646011345`，`headSha` 与 Group B commit 精确一致，`completed / success`。
+- Group B jobs：Governance `success`（job `88084275412`）、Python 3.12 `success`
+  （job `88084275458`）、.NET 8 `success`（job `88084275422`）。
+- Independent review：Codex Security scan `e2bf4cbf-355e-49d1-a134-62a46e44fa85` 覆盖 3/3 个
+  test project 的 Group B diff，reportable findings `0`；结论
+  `P0=0 / P1=0 / REVIEW_ACCEPTED|READY_TO_COMMIT`。
+- PR #7/#9 在 Group A 的 Dependabot grouping 生效后由 Dependabot 自动关闭，发生时间早于 Group B
+  candidate CI；没有人工提前 merge/rebase。Group B exact-head CI 成功后，两个 PR 均补充包含 replacement
+  commit 与 run `29646011345` 的审计说明，明确 current `dev` 已覆盖原升级。
+
+## 2026-07-18 / Group C Microsoft.NET.Test.Sdk 18.8.1 validation 与 review
+
+- Scope：三个 test project 的 `Microsoft.NET.Test.Sdk 17.12.0 -> 18.8.1` 及对应 lockfile；未同时
+  修改 xUnit、ASP.NET Core Testing、生产依赖、target framework、.NET SDK、analyzer 或业务代码。
+- `dotnet restore src/dotnet/CadMax.sln --configfile NuGet.Config --force-evaluate`：PASS；随后
+  `--locked-mode` restore：PASS。Release build：`0 warnings / 0 errors`。
+- Test discovery/result：Contracts `1/1`、Plugin `15/15`、Bridge Core `8/8`，合计
+  `24 passed / 0 failed / 0 notExecuted`；与 baseline 一致，没有无解释减少。
+- 三份 TRX 中未发现 adapter load、testhost 或 protocol negotiation 错误；临时 TRX 已删除，未提交生成物。
+- `scripts/verify.ps1`：PASS；Python 实际解析为 `pytest 8.4.2`、`mypy 1.20.2`，声明边界保持
+  `pytest>=8.4,<9` 与 `mypy>=1.17,<2`。
+- Codex Security scan `a08300d5-2305-4c81-ae20-746acac1b1f3` 覆盖 3/3 个 test project 的六文件
+  diff，snapshot digest `ca89ef4410fd8cb1f8d07cfec641c45a408b2c19e72d44fe153d759f06a0df86`，
+  reportable findings `0`；结论 `P0=0 / P1=0 / REVIEW_ACCEPTED|READY_TO_COMMIT`。
+- CodeRabbit CLI 已认证，但完整 10 分钟 review 在 604 秒超时并以 exit `124` 结束，未产生 NDJSON
+  review 输出；不得宣称 CodeRabbit `0 issues`。Codex Security 的完整覆盖与零 finding 构成本组独立
+  high-risk review gate。
+
+## 2026-07-18 / Group C exact-head CI、PR cleanup 与 maintenance acceptance candidate
+
+- Group C commit / final implementation candidate：`ba69004657adaef217ed12dd99adbb07ec1e2be9`；
+  push 后 `HEAD == origin/dev`，worktree clean。
+- Group C CI run：`29647121269`，`headSha` 与 Group C commit 精确一致，`completed / success`。
+- Group C jobs：Governance `success`（job `88087116999`）、Python 3.12 `success`
+  （job `88087116985`）、.NET 8 `success`（job `88087116982`）。
+- PR #8 在 Group C exact-head CI 成功后补充 replacement commit/run 说明并显式关闭。最终 #1–#9
+  全部为 `CLOSED`；`gh pr list --state open --author app/dependabot` 返回空数组，open Dependabot PR
+  count 为 `0`，没有关闭非 Dependabot PR。
+- Maintenance acceptance candidate 使用 Group C 累计 implementation SHA
+  `ba69004657adaef217ed12dd99adbb07ec1e2be9` 与 exact-head run `29647121269`。Phase 1.1 继续保留在
+  历史 accepted evidence；maintenance 不是 CAD 能力 work batch，Phase 1.2 尚未开始。
+- Final authority 恢复 `PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE / NOT_STARTED`，唯一下一动作恢复为
+  `IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE`。
+- Closeout commit 与其 exact-head CI 在本节成文时尚不存在；最终报告记录实际 SHA/run，不创建用于
+  自引用的额外 attestation commit，也不得用 Group C run 代替 closeout run。
+
+## 最终安全事实、已知限制与回滚
+
+- 固定安全事实保持：`autocad_runtime=NOT_CONNECTED`、`dwg_read=NOT_IMPLEMENTED`、
+  `dwg_write=NOT_IMPLEMENTED`、`read_only=ENABLED`、`allow_write=DISABLED`、
+  `allow_script=DISABLED`、`http_binding=LOOPBACK_ONLY`。
+- 已知限制：未运行真实 AutoCAD 或 DWG integration；Group C CodeRabbit 未形成完成结果；本次静态安全
+  review 未独立查询外部 advisory/registry signing provenance。上述限制不被 CI 或 mock 推断为已验证。
+- 独立回滚顺序：`git revert ba69004657adaef217ed12dd99adbb07ec1e2be9`、
+  `git revert c99f855212ed96cad751b0807da34a54deea362a`、
+  `git revert 41950edefe523ccfb9ea03cb3a91ae1ba0326dbf`；authority closeout 使用其实际 SHA 单独
+  `git revert <closeout-sha>`。每个 revert 均需 push 并验证 exact-head CI；不 reset、不 force push。
+
+## 2026-07-18 / Closeout worktree local validation
+
+- Scope：仅 `STATUS.md`、`ROADMAP.md`、append-only `TESTING.md`、append-only `WORKLOG.md` 与本 attempt
+  evidence；未修改业务代码、依赖、workflow、Dependabot policy 或 Phase 1.2 实现。
+- 首次 `scripts/docs/verify-docs.ps1`：PASS；authority regression 与 current authority 均通过，63 个
+  Markdown relative links 为 `0 warnings / 0 errors`。
+- 首次 `scripts/verify.ps1`：PASS；Ruff、format、mypy、Python `16/16`、doctor、安全脚本 `18/18`、
+  docs governance、locked .NET restore/build/test 全部成功；.NET build `0 warnings / 0 errors`，测试
+  Contracts `1/1`、Plugin `15/15`、Bridge Core `8/8`，合计 `24/24`。
+- 本节追加后必须重跑上述验证并执行 `git diff --check`，以最终待提交快照的真实结果作为 commit gate。
+- 未验证项：closeout commit 与 exact-head CI 尚未创建；真实 AutoCAD/DWG 未运行且不属于本任务。

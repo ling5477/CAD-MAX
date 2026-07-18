@@ -77,3 +77,25 @@
   新实例在 OAuth 后无法取得 user data，因此不得宣称单行修复获得新的 CodeRabbit review。
 - 本条所在 docs-only closeout commit 的 SHA 在成文时不可自引用，且其 exact-head CI 尚未运行；结果只在
   最终报告中记录，不创建第三个纯 attestation commit。
+
+## 2026-07-18 / Dependency maintenance Group B/C candidate validation
+
+- Group B candidate `c99f855212ed96cad751b0807da34a54deea362a` 的 exact-head GitHub Actions run
+  `29646011345` 为 `completed / success`；Governance job `88084275412`、Python 3.12 job
+  `88084275458`、.NET 8 job `88084275422` 全部成功。
+- Group C 将三个 test project 的 `Microsoft.NET.Test.Sdk 17.12.0` 独立升级到 `18.8.1`；
+  force-evaluate restore 与 locked restore 均成功，Release build 为 `0 warnings / 0 errors`。
+- Group C 本地测试发现与结果为 Contracts `1/1`、Plugin `15/15`、Bridge Core `8/8`，合计
+  `24 passed / 0 failed / 0 notExecuted`；三份 TRX 未发现 adapter、testhost 或 protocol negotiation
+  错误，临时 TRX 已删除。
+- Group C 工作区的 `scripts/verify.ps1`：PASS；Python 实际解析版本为 `pytest 8.4.2`、
+  `mypy 1.20.2`，声明边界仍为 `pytest>=8.4,<9`、`mypy>=1.17,<2`。
+- Group C candidate `ba69004657adaef217ed12dd99adbb07ec1e2be9` 的 exact-head GitHub Actions run
+  `29647121269` 为 `completed / success`；Governance job `88087116999`、Python 3.12 job
+  `88087116985`、.NET 8 job `88087116982` 全部成功。
+- 本条所在 dependency maintenance closeout commit 在成文时尚未创建；不得以 Group C run
+  `29647121269` 代替 closeout exact-head CI。
+- Closeout 五文件工作区首次执行 `scripts/docs/verify-docs.ps1` 与 `scripts/verify.ps1` 均为 PASS：
+  authority regression/current authority、63 个 Markdown links、Ruff、mypy、Python `16/16`、doctor、
+  safety `18/18`、locked .NET restore/build/test 全部成功；.NET build `0 warnings / 0 errors`，测试
+  Contracts `1/1`、Plugin `15/15`、Bridge Core `8/8`。本条追加后仍需重跑验证覆盖最终待提交快照。

@@ -320,3 +320,6 @@ if ($null -ne $testFailure) {
     fixtures = 'EMPTY_PLACEHOLDERS_IN_GIT_IGNORED_PATH'
     paths = 'REDACTED'
 } | ConvertTo-Json
+
+# Expected fail-closed child cases leave LASTEXITCODE non-zero; all assertions and cleanup succeeded here.
+exit 0

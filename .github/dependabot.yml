@@ -5,15 +5,31 @@ updates:
     schedule:
       interval: weekly
     target-branch: dev
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
     target-branch: dev
+    ignore:
+      - dependency-name: pytest
+        update-types:
+          - version-update:semver-major
+      - dependency-name: mypy
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: nuget
     directory: /src/dotnet
     schedule:
       interval: weekly
     target-branch: dev
+    groups:
+      dotnet-patch-test-dependencies:
+        patterns:
+          - Microsoft.AspNetCore.Mvc.Testing
+          - xunit.runner.visualstudio

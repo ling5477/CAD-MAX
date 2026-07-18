@@ -1,5 +1,5 @@
 {
-  "contractSchema": "1.0.0",
+  "contractSchema": "1.1.0",
   "authoritySchemas": {
     "1": {
       "requiredKeys": [
@@ -51,6 +51,7 @@
       "workBatches": [
         "PHASE_1_PLAN",
         "PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP",
+        "PHASE_1_MAINTENANCE_DEPENDENCIES",
         "PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE",
         "PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH",
         "PHASE_1_4_READONLY_DOCUMENT_INSPECTION",
@@ -112,7 +113,7 @@
       "nextActionTemplate": "{workBatch}_COMMIT_AND_PUSH"
     },
     "COMMITTED|CI_PENDING": {
-      "commitPattern": "^[0-9a-f]{40}$",
+      "commitPattern": "^(PENDING|[0-9a-f]{40})$",
       "ciRunPattern": "^(PENDING|[1-9][0-9]*)$",
       "nextActionTemplate": "{workBatch}_CI_WAIT_OR_INVESTIGATION"
     },

@@ -184,6 +184,66 @@ try {
         -RoadmapAction 'IMPLEMENT_PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP'
     Assert-Positive 'schema 2 initial work batch' $schema2Fixture
 
+    $maintenanceReconciliationStatus = New-Schema2Status `
+        -AcceptedBatch 'PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP' `
+        -WorkBatch 'PHASE_1_MAINTENANCE_DEPENDENCIES' `
+        -NextAction 'IMPLEMENT_PHASE_1_MAINTENANCE_DEPENDENCIES'
+    $maintenanceReconciliation = New-Fixture `
+        -Name 'maintenance-reconciliation-positive' `
+        -StatusContent $maintenanceReconciliationStatus `
+        -RoadmapAction 'IMPLEMENT_PHASE_1_MAINTENANCE_DEPENDENCIES'
+    Assert-Positive 'maintenance reconciliation' $maintenanceReconciliation
+
+    $maintenancePendingStatus = New-Schema2Status `
+        -AcceptedBatch 'PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP' `
+        -WorkBatch 'PHASE_1_MAINTENANCE_DEPENDENCIES' `
+        -WorkStatus 'COMMITTED|CI_PENDING' `
+        -WorkCommit 'PENDING' `
+        -WorkRun 'PENDING' `
+        -NextAction 'PHASE_1_MAINTENANCE_DEPENDENCIES_CI_WAIT_OR_INVESTIGATION'
+    $maintenancePending = New-Fixture `
+        -Name 'maintenance-pending-positive' `
+        -StatusContent $maintenancePendingStatus `
+        -RoadmapAction 'PHASE_1_MAINTENANCE_DEPENDENCIES_CI_WAIT_OR_INVESTIGATION'
+    Assert-Positive 'maintenance pending without future SHA' $maintenancePending
+
+    $maintenanceReturnStatus = New-Schema2Status `
+        -AcceptedBatch 'PHASE_1_MAINTENANCE_DEPENDENCIES' `
+        -AcceptedCommit 'dddddddddddddddddddddddddddddddddddddddd' `
+        -AcceptedRun '456' `
+        -WorkBatch 'PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE' `
+        -NextAction 'IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE'
+    $maintenanceReturn = New-Fixture `
+        -Name 'maintenance-return-positive' `
+        -StatusContent $maintenanceReturnStatus `
+        -RoadmapAction 'IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE'
+    Assert-Positive 'return to Phase 1.2 after maintenance' $maintenanceReturn
+
+    $skippedMaintenanceStatus = New-Schema2Status `
+        -AcceptedBatch 'PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP' `
+        -WorkBatch 'PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE' `
+        -NextAction 'IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE'
+    $skippedMaintenance = New-Fixture `
+        -Name 'maintenance-skip-negative' `
+        -StatusContent $skippedMaintenanceStatus `
+        -RoadmapAction 'IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE'
+    Assert-Negative `
+        'Phase 1.2 cannot skip inserted maintenance' `
+        $skippedMaintenance `
+        'UNFINISHED_WORK_BATCH_ORDER_INVALID'
+
+    $maintenancePendingUncommittedStatus = $maintenancePendingStatus.Replace(
+        'work_batch_commit=PENDING',
+        'work_batch_commit=UNCOMMITTED')
+    $maintenancePendingUncommitted = New-Fixture `
+        -Name 'maintenance-pending-uncommitted-negative' `
+        -StatusContent $maintenancePendingUncommittedStatus `
+        -RoadmapAction 'PHASE_1_MAINTENANCE_DEPENDENCIES_CI_WAIT_OR_INVESTIGATION'
+    Assert-Negative `
+        'CI pending requires a concrete or pending commit reference' `
+        $maintenancePendingUncommitted `
+        'WORK_BATCH_COMMIT_STATE_MISMATCH'
+
     $missingBlock = New-Fixture `
         -Name 'missing-block' `
         -StatusContent '# no authority block' `

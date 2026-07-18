@@ -8,11 +8,11 @@ accepted_work_batch=PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP
 accepted_work_batch_status=ACCEPTED|CI_GREEN
 accepted_work_batch_commit=d149162938b239948048662c9db342c4a0b1fce3
 accepted_work_batch_ci_run=29641896446
-work_batch=PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE
-work_batch_status=NOT_STARTED
-work_batch_commit=NONE
-work_batch_ci_run=NOT_RUN
-next_action=IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE
+work_batch=PHASE_1_MAINTENANCE_DEPENDENCIES
+work_batch_status=COMMITTED|CI_PENDING
+work_batch_commit=PENDING
+work_batch_ci_run=PENDING
+next_action=PHASE_1_MAINTENANCE_DEPENDENCIES_CI_WAIT_OR_INVESTIGATION
 autocad_runtime=NOT_CONNECTED
 dwg_read=NOT_IMPLEMENTED
 dwg_write=NOT_IMPLEMENTED
@@ -37,15 +37,15 @@ authority。其他文档只能解释或链接本文件，不得建立独立状�
   `d149162938b239948048662c9db342c4a0b1fce3` 的 exact-head CI run `29641896446` 中 Governance、
   Python 3.12、.NET 8 全部成功；AutoCAD 2025 已取得真实 plugin load、status command、Initialize
   与 Terminate evidence，AutoCAD 2026 因未安装保持 `NOT_RUN`。
-- PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE：`NOT_STARTED`（未开始）；未产生 implementation commit，
-  未运行该 batch 的 CI。
+- PHASE_1_MAINTENANCE_DEPENDENCIES：`COMMITTED / CI_PENDING`；Group A 候选在本提交成文时尚无可
+  自引用的 commit SHA 或 CI run，因此字段使用 contract 允许的 `PENDING`，不得据此宣称 CI 绿色。
+- PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE：仍为 `NOT_STARTED`（未开始）；依赖维护接受前不得启动。
 
 ## 唯一下一动作
 
-`IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE`：只允许建立 plugin 内 `127.0.0.1` HTTP、token、
-health/version/capabilities 与 start/stop、端口及退出清理生命周期；不允许 document API、图纸读取、
-DWG 修改、write/script tool 或下一 work batch 实现。执行细节见
-[Phase 1 主计划](PHASE_1_AUTOCAD_CONNECTION_PLAN.md)。
+`PHASE_1_MAINTENANCE_DEPENDENCIES_CI_WAIT_OR_INVESTIGATION`：提交并推送 Group A 候选后，只允许核对
+该 exact HEAD 的 Governance、Python 3.12、.NET 8 jobs 与 Node runtime annotations；失败时进入最小
+CI blocker 修复，不得启动 Phase 1.2 或宣称 maintenance accepted。
 
 ## 固定安全事实
 

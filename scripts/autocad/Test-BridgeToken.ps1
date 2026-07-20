@@ -67,6 +67,26 @@ function Test-CadMaxBridgeTokenAcl {
     return $currentRead -and $currentWrite -and $systemRead
 }
 
+function Assert-CadMaxBridgeTokenOwner {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    if ($null -eq $currentUser) {
+        throw [InvalidOperationException]::new('CURRENT_USER_SID_UNAVAILABLE')
+    }
+    $security = [IO.FileSystemAclExtensions]::GetAccessControl(
+        [IO.FileInfo]::new($Path),
+        [Security.AccessControl.AccessControlSections]::Owner)
+    $owner = $security.GetOwner([Security.Principal.SecurityIdentifier])
+    if (-not $owner.Equals($currentUser)) {
+        throw [InvalidOperationException]::new('TOKEN_OWNER_MISMATCH')
+    }
+}
+
 function Read-CadMaxBridgeTokenSummary {
     [CmdletBinding()]
     param(
@@ -154,6 +174,7 @@ try {
         throw [InvalidOperationException]::new('TOKEN_CREATE_TEST_FAILED')
     }
     $created = Read-CadMaxBridgeTokenSummary -Path $fixtureFile
+    Assert-CadMaxBridgeTokenOwner -Path $fixtureFile
     $createText = $createOutput -join "`n"
     if ($createText.Contains($created.Token) -or
         $createText -match '(?i)(?:[A-Z]:[\\/]|\\\\)') {
@@ -173,6 +194,7 @@ try {
         throw [InvalidOperationException]::new('TOKEN_ROTATE_TEST_FAILED')
     }
     $rotated = Read-CadMaxBridgeTokenSummary -Path $fixtureFile
+    Assert-CadMaxBridgeTokenOwner -Path $fixtureFile
     $rotateText = $rotateOutput -join "`n"
     if ($created.Token -eq $rotated.Token -or
         $created.TokenId -eq $rotated.TokenId -or
@@ -198,7 +220,7 @@ try {
 
     [pscustomobject]@{
         result = 'PASS'
-        cases = 8
+        cases = 10
         aclState = 'SECURE_AND_BROAD_NEGATIVE_VERIFIED'
         token = 'REDACTED'
         paths = 'REDACTED'

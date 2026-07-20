@@ -93,7 +93,7 @@ listener、当前用户 `.bundle` 安装与 authority 推进。接受前必须�
 - Python：`38/38 PASS`。
 - locked .NET restore、Release build：`PASS`，`0 warnings / 0 errors`；tests：Contracts `3/3`、
   Plugin `50/50`、Bridge Core `13/13`，合计 `66/66 PASS`。
-- PowerShell：AutoCAD safety `24/24`、token safety `8/8`、loopback Bridge `PASS`。
+- PowerShell：AutoCAD safety `24/24`、token safety `10/10`、loopback Bridge `PASS`。
 - `scripts/docs/verify-docs.ps1` 与最终 candidate 待提交快照的 `scripts/verify.ps1`：`PASS`；
   未执行的 exact-head CI 不在本节宣称通过。
 
@@ -152,6 +152,29 @@ listener、当前用户 `.bundle` 安装与 authority 推进。接受前必须�
 - Closeout commit/run：`NOT_RUN`；只有 candidate CI GREEN 后才更新 authority，并以
   `docs(status): accept Phase 1.2 loopback bridge` 独立提交；closeout 自身还需 exact-head CI。
 - Current authority 保持 Phase 1.2 `NOT_STARTED`、AutoCAD `NOT_CONNECTED`，未用本机 PASS 提前推进。
+
+## Candidate CI recovery
+
+- 初始 implementation candidate `c89626475a35f513d63089e4c0ddd3bc25d9176e` 已以
+  `feat(bridge): add authenticated AutoCAD loopback lifecycle` 提交并推送；exact-head CI run
+  `29764567086` 中 Python 3.12 success，Governance 与 .NET 8 failure，因此该 run 明确记为
+  `COMMITTED|CI_FAILED|FIX_REQUIRED`，没有通过重跑冒充新 candidate。
+- Governance 根因为 Windows Server 2025 runner 对新文件赋予隐式 Administrators owner；旧 token script
+  先创建文件再收紧 DACL，没有显式建立 owner，因而 token safety fail closed。`.NET 8` 的三个 token loader
+  测试与七个 Host endpoint 测试具有同一 fixture 根因，均返回 `TOKEN_FILE_INSECURE` 或在 Host build 前退出；
+  Contracts `3/3` 与 Python job 不受影响。
+- 恢复修复使用 `FileSystemAclExtensions.Create + FileMode.CreateNew`，在文件首次可见时一次性设置
+  owner=current user、protected DACL、current user/SYSTEM FullControl；使用 `FileShare.None + WriteThrough +
+  Flush(true)`，并清零 payload bytes。create/rotate 后显式验证 owner；生产 loader 的 owner/DACL fail-closed
+  校验没有放宽。两个 .NET fixture 使用相同创建时安全描述符，避免依赖 runner 的隐式 owner。
+- 修复后的 token safety `10/10`、AutoCAD script safety `24/24`、Plugin tests `50/50`、Bridge Core tests
+  `13/13`、主工作树与独立 archived fresh fixture 的 `scripts/verify.ps1` 均 `PASS`，build
+  `0 warnings / 0 errors`；NuGet vulnerability query 仍无已知漏洞。
+- 对该 CI ACL remediation 另做人工 scoped security review：未发现 owner 降级、继承 DACL、覆盖现有 token、
+  token/path 输出或生产校验绕过；`P0=0 / P1=0`。这不是新的 Codex Security scan，也不扩张 sealed focused
+  scan `2dcaeabb-6ed1-44ce-83b9-e4d71325b226` 的覆盖声明。
+- 修复 candidate 使用 `fix(bridge): create token files with explicit owner`；本恢复记录提交时 exact SHA/run
+  尚未产生，必须由后续 candidate exact-head CI GREEN 记录补齐后才允许 authority closeout。
 
 ## Known limitations
 

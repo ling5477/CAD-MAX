@@ -39,6 +39,80 @@ function Set-CadMaxBridgeTokenAcl {
         $security)
 }
 
+function New-CadMaxBridgeTokenFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [Parameter(Mandatory)]
+        [string]$Payload
+    )
+
+    $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    if ($null -eq $currentUser) {
+        throw [InvalidOperationException]::new('CURRENT_USER_SID_UNAVAILABLE')
+    }
+    $system = [Security.Principal.SecurityIdentifier]::new(
+        [Security.Principal.WellKnownSidType]::LocalSystemSid,
+        $null)
+    $security = [Security.AccessControl.FileSecurity]::new()
+    $security.SetOwner($currentUser)
+    $security.SetAccessRuleProtection($true, $false)
+    $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            $currentUser,
+            [Security.AccessControl.FileSystemRights]::FullControl,
+            [Security.AccessControl.AccessControlType]::Allow))
+    $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            $system,
+            [Security.AccessControl.FileSystemRights]::FullControl,
+            [Security.AccessControl.AccessControlType]::Allow))
+
+    $payloadBytes = [Text.UTF8Encoding]::new($false).GetBytes($Payload)
+    $stream = $null
+    try {
+        $stream = [IO.FileSystemAclExtensions]::Create(
+            [IO.FileInfo]::new($Path),
+            [IO.FileMode]::CreateNew,
+            [Security.AccessControl.FileSystemRights]::FullControl,
+            [IO.FileShare]::None,
+            4096,
+            [IO.FileOptions]::WriteThrough,
+            $security)
+        $stream.Write($payloadBytes, 0, $payloadBytes.Length)
+        $stream.Flush($true)
+    }
+    finally {
+        if ($null -ne $stream) {
+            $stream.Dispose()
+        }
+        [Array]::Clear($payloadBytes, 0, $payloadBytes.Length)
+    }
+}
+
+function Assert-CadMaxBridgeTokenOwner {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    if ($null -eq $currentUser) {
+        throw [InvalidOperationException]::new('CURRENT_USER_SID_UNAVAILABLE')
+    }
+    $system = [Security.Principal.SecurityIdentifier]::new(
+        [Security.Principal.WellKnownSidType]::LocalSystemSid,
+        $null)
+    $security = [IO.FileSystemAclExtensions]::GetAccessControl(
+        [IO.FileInfo]::new($Path),
+        [Security.AccessControl.AccessControlSections]::Owner)
+    $owner = $security.GetOwner([Security.Principal.SecurityIdentifier])
+    if (-not $owner.Equals($currentUser) -and -not $owner.Equals($system)) {
+        throw [InvalidOperationException]::new('TOKEN_FILE_INSECURE')
+    }
+}
+
 try {
     . (Join-Path $PSScriptRoot 'AutoCAD.Common.ps1')
     $repositoryRoot = Get-CadMaxRepositoryRoot
@@ -64,6 +138,9 @@ try {
     $alreadyExists = Test-Path -LiteralPath $targetFile -PathType Leaf
     if ($alreadyExists -and -not $Rotate) {
         throw [InvalidOperationException]::new('TOKEN_ALREADY_CONFIGURED')
+    }
+    if ($alreadyExists) {
+        Assert-CadMaxBridgeTokenOwner -Path $targetFile
     }
 
     $tokenBytes = [byte[]]::new(32)
@@ -91,11 +168,7 @@ try {
     } | ConvertTo-Json -Compress
     $temporaryFile = Join-Path $targetDirectory (
         ".bridge-token-$([Guid]::NewGuid().ToString('N')).tmp")
-    [IO.File]::WriteAllText(
-        $temporaryFile,
-        $payload,
-        [Text.UTF8Encoding]::new($false))
-    Set-CadMaxBridgeTokenAcl -Path $temporaryFile
+    New-CadMaxBridgeTokenFile -Path $temporaryFile -Payload $payload
 
     if ($alreadyExists) {
         $backupFile = Join-Path $targetDirectory (
@@ -109,6 +182,7 @@ try {
     }
     $temporaryFile = $null
     Set-CadMaxBridgeTokenAcl -Path $targetFile
+    Assert-CadMaxBridgeTokenOwner -Path $targetFile
 
     $digest = [Security.Cryptography.SHA256]::HashData($tokenBytes)
     try {

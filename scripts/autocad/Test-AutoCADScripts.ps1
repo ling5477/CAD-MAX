@@ -291,6 +291,8 @@ try {
         Join-Path $PSScriptRoot 'New-BridgeToken.ps1') -Raw
     foreach ($requiredTokenControl in @(
             'RandomNumberGenerator',
+            'FileSystemAclExtensions]::Create',
+            'SetOwner',
             'SetAccessRuleProtection',
             'File]::Replace',
             'TOKEN_ALREADY_CONFIGURED',

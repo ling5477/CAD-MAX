@@ -111,16 +111,14 @@ public sealed class BridgeHostFactory : WebApplicationFactory<Program>
         Directory.CreateDirectory(testRoot);
         Token = CreateToken();
         var tokenPath = Path.Combine(testRoot, "bridge-token.json");
-        File.WriteAllText(
+        WriteSecureFile(
             tokenPath,
             JsonSerializer.Serialize(new
             {
                 schemaVersion = "1.0",
                 token = Token,
                 createdAtUtc = DateTimeOffset.UtcNow,
-            }),
-            new UTF8Encoding(false));
-        ApplySecureAcl(tokenPath);
+            }));
         previousTokenFile = Environment.GetEnvironmentVariable("CAD_MAX_BRIDGE_TOKEN_FILE");
         Environment.SetEnvironmentVariable("CAD_MAX_BRIDGE_TOKEN_FILE", tokenPath);
     }
@@ -155,11 +153,12 @@ public sealed class BridgeHostFactory : WebApplicationFactory<Program>
         }
     }
 
-    private static void ApplySecureAcl(string path)
+    private static void WriteSecureFile(string path, string content)
     {
         var currentUser = WindowsIdentity.GetCurrent().User
             ?? throw new InvalidOperationException("CURRENT_USER_SID_UNAVAILABLE");
         var security = new FileSecurity();
+        security.SetOwner(currentUser);
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
         security.AddAccessRule(new FileSystemAccessRule(
             currentUser,
@@ -169,6 +168,24 @@ public sealed class BridgeHostFactory : WebApplicationFactory<Program>
             new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
             FileSystemRights.FullControl,
             AccessControlType.Allow));
-        new FileInfo(path).SetAccessControl(security);
+
+        var payload = new UTF8Encoding(false).GetBytes(content);
+        try
+        {
+            using var stream = FileSystemAclExtensions.Create(
+                new FileInfo(path),
+                FileMode.CreateNew,
+                FileSystemRights.FullControl,
+                FileShare.None,
+                bufferSize: 4096,
+                FileOptions.WriteThrough,
+                security);
+            stream.Write(payload, 0, payload.Length);
+            stream.Flush(flushToDisk: true);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(payload);
+        }
     }
 }

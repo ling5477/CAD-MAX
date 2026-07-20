@@ -102,12 +102,13 @@ public sealed class BridgeTokenTests : IDisposable
             .Replace('+', '-')
             .Replace('/', '_');
 
-    internal static void ApplySecureAcl(string path)
+    internal static void WriteSecureFile(string path, string content)
     {
         var currentUser = WindowsIdentity.GetCurrent().User
             ?? throw new InvalidOperationException("CURRENT_USER_SID_UNAVAILABLE");
         var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
         var security = new FileSecurity();
+        security.SetOwner(currentUser);
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
         security.AddAccessRule(new FileSystemAccessRule(
             currentUser,
@@ -117,7 +118,25 @@ public sealed class BridgeTokenTests : IDisposable
             system,
             FileSystemRights.FullControl,
             AccessControlType.Allow));
-        new FileInfo(path).SetAccessControl(security);
+
+        var payload = new UTF8Encoding(false).GetBytes(content);
+        try
+        {
+            using var stream = FileSystemAclExtensions.Create(
+                new FileInfo(path),
+                FileMode.CreateNew,
+                FileSystemRights.FullControl,
+                FileShare.None,
+                bufferSize: 4096,
+                FileOptions.WriteThrough,
+                security);
+            stream.Write(payload, 0, payload.Length);
+            stream.Flush(flushToDisk: true);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(payload);
+        }
     }
 
     private string WriteTokenFile(string token) =>
@@ -132,8 +151,7 @@ public sealed class BridgeTokenTests : IDisposable
     {
         Directory.CreateDirectory(testRoot);
         var path = Path.Combine(testRoot, $"{Guid.NewGuid():N}.json");
-        File.WriteAllText(path, content, new UTF8Encoding(false));
-        ApplySecureAcl(path);
+        WriteSecureFile(path, content);
         return path;
     }
 }

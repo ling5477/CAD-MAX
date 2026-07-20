@@ -12,7 +12,7 @@ public sealed class PluginSerializationTests
         using var document = JsonDocument.Parse(json);
 
         Assert.Equal("CAD-MAX", document.RootElement.GetProperty("pluginName").GetString());
-        Assert.Equal("0.1.0", document.RootElement.GetProperty("pluginVersion").GetString());
+        Assert.Equal("0.1.1", document.RootElement.GetProperty("pluginVersion").GetString());
         Assert.Equal("1.0", document.RootElement.GetProperty("schemaVersion").GetString());
     }
 
@@ -21,7 +21,9 @@ public sealed class PluginSerializationTests
     {
         var controller = new PluginLifecycleController(
             PluginMetadata.CreateDefault(),
-            new NullEvidenceWriter());
+            new NullEvidenceWriter(),
+            new TestTokenSource(),
+            new TestServerFactory());
         Assert.True(controller.Initialize(
             new PluginRuntimeInfo(2025, "R25.0.58.0.0", "0.1.0", true)));
 
@@ -64,5 +66,38 @@ public sealed class PluginSerializationTests
     private sealed class NullEvidenceWriter : IPluginLifecycleEvidenceWriter
     {
         public bool TryAppend(PluginLifecycleEvidenceEntry entry) => true;
+    }
+
+    private sealed class TestTokenSource : IBridgeTokenSource
+    {
+        public BridgeTokenLoadResult Load()
+        {
+            var token = Convert.ToBase64String(
+                    System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))
+                .TrimEnd('=')
+                .Replace('+', '-')
+                .Replace('/', '_');
+            _ = BridgeTokenCredential.TryCreate(token, out var credential);
+            return new BridgeTokenLoadResult(credential, null);
+        }
+    }
+
+    private sealed class TestServerFactory : ILoopbackBridgeServerFactory
+    {
+        public ILoopbackBridgeServer Create(
+            LoopbackBridgeOptions options,
+            BridgeTokenCredential credential,
+            CadMax.Bridge.Core.BridgeInstanceResponseService responseService,
+            Action<string> listenerFault) => new TestServer();
+    }
+
+    private sealed class TestServer : ILoopbackBridgeServer
+    {
+        public int ActiveConnectionCount => 0;
+        public string? TryStart() => null;
+        public Task<bool> RunAuthenticatedSelfProbeAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(true);
+        public Task<bool> StopAsync(TimeSpan deadline) => Task.FromResult(true);
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

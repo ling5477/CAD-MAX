@@ -35,6 +35,60 @@ public enum CadStatus
 
     /// <summary>An internal failure was mapped to a sanitized response.</summary>
     InternalError,
+
+    /// <summary>The Bearer token was missing or invalid.</summary>
+    Unauthorized,
+
+    /// <summary>The HTTP method is not permitted.</summary>
+    MethodNotAllowed,
+
+    /// <summary>The request path is not registered.</summary>
+    RouteNotFound,
+
+    /// <summary>Query strings are not accepted by process-level routes.</summary>
+    QueryNotAllowed,
+
+    /// <summary>Request bodies and transfer encodings are not accepted.</summary>
+    RequestBodyNotAllowed,
+
+    /// <summary>The bounded header section was exceeded.</summary>
+    HeadersTooLarge,
+
+    /// <summary>The bounded request line was exceeded.</summary>
+    RequestTargetTooLong,
+
+    /// <summary>The HTTP request could not be read before its deadline.</summary>
+    RequestTimeout,
+
+    /// <summary>The bounded connection capacity is exhausted.</summary>
+    ServerBusy,
+
+    /// <summary>The listener is running but the lifecycle is not ready.</summary>
+    BridgeNotReady,
+
+    /// <summary>The bridge is stopping and rejects new work.</summary>
+    BridgeStopping,
+
+    /// <summary>The configured AutoCAD bridge process is not reachable.</summary>
+    NotConnected,
+
+    /// <summary>The peer contract is incompatible.</summary>
+    SchemaMismatch,
+
+    /// <summary>The machine-local token file is not configured.</summary>
+    TokenNotConfigured,
+
+    /// <summary>The machine-local token file schema is invalid.</summary>
+    TokenConfigInvalid,
+
+    /// <summary>The machine-local token file ACL is too broad.</summary>
+    TokenFileInsecure,
+
+    /// <summary>The decoded token is not exactly 256 bits.</summary>
+    TokenInvalid,
+
+    /// <summary>The machine-local token file could not be read safely.</summary>
+    TokenUnavailable,
 }
 
 /// <summary>
@@ -59,6 +113,24 @@ public sealed class CadStatusJsonConverter : JsonConverter<CadStatus>
             "NOT_IMPLEMENTED" => CadStatus.NotImplemented,
             "TIMEOUT" => CadStatus.Timeout,
             "INTERNAL_ERROR" => CadStatus.InternalError,
+            "UNAUTHORIZED" => CadStatus.Unauthorized,
+            "METHOD_NOT_ALLOWED" => CadStatus.MethodNotAllowed,
+            "ROUTE_NOT_FOUND" => CadStatus.RouteNotFound,
+            "QUERY_NOT_ALLOWED" => CadStatus.QueryNotAllowed,
+            "REQUEST_BODY_NOT_ALLOWED" => CadStatus.RequestBodyNotAllowed,
+            "HEADERS_TOO_LARGE" => CadStatus.HeadersTooLarge,
+            "REQUEST_TARGET_TOO_LONG" => CadStatus.RequestTargetTooLong,
+            "REQUEST_TIMEOUT" => CadStatus.RequestTimeout,
+            "SERVER_BUSY" => CadStatus.ServerBusy,
+            "BRIDGE_NOT_READY" => CadStatus.BridgeNotReady,
+            "BRIDGE_STOPPING" => CadStatus.BridgeStopping,
+            "NOT_CONNECTED" => CadStatus.NotConnected,
+            "SCHEMA_MISMATCH" => CadStatus.SchemaMismatch,
+            "TOKEN_NOT_CONFIGURED" => CadStatus.TokenNotConfigured,
+            "TOKEN_CONFIG_INVALID" => CadStatus.TokenConfigInvalid,
+            "TOKEN_FILE_INSECURE" => CadStatus.TokenFileInsecure,
+            "TOKEN_INVALID" => CadStatus.TokenInvalid,
+            "TOKEN_UNAVAILABLE" => CadStatus.TokenUnavailable,
             _ => throw new JsonException("Unknown CAD-MAX status."),
         };
 
@@ -78,6 +150,24 @@ public sealed class CadStatusJsonConverter : JsonConverter<CadStatus>
             CadStatus.NotImplemented => "NOT_IMPLEMENTED",
             CadStatus.Timeout => "TIMEOUT",
             CadStatus.InternalError => "INTERNAL_ERROR",
+            CadStatus.Unauthorized => "UNAUTHORIZED",
+            CadStatus.MethodNotAllowed => "METHOD_NOT_ALLOWED",
+            CadStatus.RouteNotFound => "ROUTE_NOT_FOUND",
+            CadStatus.QueryNotAllowed => "QUERY_NOT_ALLOWED",
+            CadStatus.RequestBodyNotAllowed => "REQUEST_BODY_NOT_ALLOWED",
+            CadStatus.HeadersTooLarge => "HEADERS_TOO_LARGE",
+            CadStatus.RequestTargetTooLong => "REQUEST_TARGET_TOO_LONG",
+            CadStatus.RequestTimeout => "REQUEST_TIMEOUT",
+            CadStatus.ServerBusy => "SERVER_BUSY",
+            CadStatus.BridgeNotReady => "BRIDGE_NOT_READY",
+            CadStatus.BridgeStopping => "BRIDGE_STOPPING",
+            CadStatus.NotConnected => "NOT_CONNECTED",
+            CadStatus.SchemaMismatch => "SCHEMA_MISMATCH",
+            CadStatus.TokenNotConfigured => "TOKEN_NOT_CONFIGURED",
+            CadStatus.TokenConfigInvalid => "TOKEN_CONFIG_INVALID",
+            CadStatus.TokenFileInsecure => "TOKEN_FILE_INSECURE",
+            CadStatus.TokenInvalid => "TOKEN_INVALID",
+            CadStatus.TokenUnavailable => "TOKEN_UNAVAILABLE",
             _ => throw new JsonException("Unknown CAD-MAX status."),
         });
 }

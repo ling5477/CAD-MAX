@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
+from cad_max_mcp.models.bridge import BridgeConnectionState
 from cad_max_mcp.models.envelope import ResultEnvelope, Status
 
 
@@ -17,6 +18,8 @@ class BackendProbe:
     available: bool
     status: Status
     message: str
+    connection_state: BridgeConnectionState
+    envelope: ResultEnvelope | None = None
 
 
 class CadBackend(Protocol):
@@ -32,6 +35,15 @@ class CadBackend(Protocol):
 
     async def drawing_status(self, request_id: UUID, trace_id: UUID) -> ResultEnvelope:
         """Return real drawing status or an explicit fail-closed result."""
+        ...
+
+    async def bridge_system(self, operation: str) -> ResultEnvelope:
+        """Return one process-level bridge endpoint or a structured unavailable result."""
+        ...
+
+    @property
+    def connection_state(self) -> BridgeConnectionState:
+        """Return the latest sanitized connection state."""
         ...
 
     def capabilities(self) -> list[str]:

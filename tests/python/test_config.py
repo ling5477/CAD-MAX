@@ -18,6 +18,8 @@ def test_safe_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
         "CAD_MAX_ALLOW_SCRIPT",
         "CAD_MAX_HTTP_HOST",
         "CAD_MAX_ALLOWED_ROOTS",
+        "CAD_MAX_BRIDGE_URL",
+        "CAD_MAX_BRIDGE_TOKEN_FILE",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -30,6 +32,8 @@ def test_safe_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.allow_write is False
     assert settings.allow_script is False
     assert settings.allowed_roots == []
+    assert settings.bridge_url is None
+    assert settings.bridge_token_file is None
 
 
 def test_non_loopback_http_host_is_rejected() -> None:
@@ -42,6 +46,25 @@ def test_bridge_url_must_be_loopback() -> None:
     """A configured Python-to-C# bridge cannot point to a remote host."""
     with pytest.raises(ValidationError, match="loopback"):
         CadMaxSettings(bridge_url="http://192.0.2.5:47770")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "http://localhost:47770",
+        "https://127.0.0.1:47770",
+        "http://127.0.0.1:47770/v1",
+        "http://127.0.0.1:47770?token=bad",
+    ],
+)
+def test_bridge_url_requires_explicit_http_origin(value: str) -> None:
+    with pytest.raises(ValidationError):
+        CadMaxSettings(bridge_url=value)
+
+
+def test_bridge_token_file_must_be_absolute() -> None:
+    with pytest.raises(ValidationError, match="absolute"):
+        CadMaxSettings(bridge_token_file=Path("relative-token.json"))
 
 
 def test_allowed_roots_must_be_absolute() -> None:

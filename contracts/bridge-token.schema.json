@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cad-max.dev/contracts/bridge-token.schema.json",
+  "title": "CAD-MAX machine-local bridge token",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "token", "createdAtUtc"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "token": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "createdAtUtc": { "type": "string", "format": "date-time" }
+  }
+}

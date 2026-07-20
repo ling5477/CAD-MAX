@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
-
-from cad_max_mcp import SCHEMA_VERSION
 
 
 def to_camel(value: str) -> str:
@@ -29,6 +27,24 @@ class Status(StrEnum):
     NOT_IMPLEMENTED = "NOT_IMPLEMENTED"
     TIMEOUT = "TIMEOUT"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    UNAUTHORIZED = "UNAUTHORIZED"
+    METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
+    ROUTE_NOT_FOUND = "ROUTE_NOT_FOUND"
+    QUERY_NOT_ALLOWED = "QUERY_NOT_ALLOWED"
+    REQUEST_BODY_NOT_ALLOWED = "REQUEST_BODY_NOT_ALLOWED"
+    HEADERS_TOO_LARGE = "HEADERS_TOO_LARGE"
+    REQUEST_TARGET_TOO_LONG = "REQUEST_TARGET_TOO_LONG"
+    REQUEST_TIMEOUT = "REQUEST_TIMEOUT"
+    SERVER_BUSY = "SERVER_BUSY"
+    BRIDGE_NOT_READY = "BRIDGE_NOT_READY"
+    BRIDGE_STOPPING = "BRIDGE_STOPPING"
+    NOT_CONNECTED = "NOT_CONNECTED"
+    SCHEMA_MISMATCH = "SCHEMA_MISMATCH"
+    TOKEN_NOT_CONFIGURED = "TOKEN_NOT_CONFIGURED"
+    TOKEN_CONFIG_INVALID = "TOKEN_CONFIG_INVALID"
+    TOKEN_FILE_INSECURE = "TOKEN_FILE_INSECURE"
+    TOKEN_INVALID = "TOKEN_INVALID"
+    TOKEN_UNAVAILABLE = "TOKEN_UNAVAILABLE"
 
 
 class ResultEnvelope(BaseModel):
@@ -38,9 +54,10 @@ class ResultEnvelope(BaseModel):
         alias_generator=to_camel,
         populate_by_name=True,
         use_enum_values=False,
+        extra="forbid",
     )
 
-    schema_version: str = SCHEMA_VERSION
+    schema_version: Literal["1.0"] = "1.0"
     request_id: UUID = Field(default_factory=uuid4)
     trace_id: UUID = Field(default_factory=uuid4)
     success: bool

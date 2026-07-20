@@ -181,6 +181,55 @@ if ($null -ne $schemaSpec -and $null -ne $authority) {
         }
     }
 
+    foreach ($factProperty in $contract.conditionalSecurityFacts.PSObject.Properties) {
+        $key = $factProperty.Name
+        $policy = $factProperty.Value
+        if (-not $authority.ContainsKey($key)) {
+            continue
+        }
+
+        $actual = [string]$authority[$key]
+        if ($actual -notin @($policy.allowedValues)) {
+            Add-AuthorityError (
+                "SAFETY_FACT_VALUE_INVALID key={0} actual={1}" -f
+                $key,
+                $actual) 'SECURITY_DEFAULT_REGRESSION'
+            continue
+        }
+
+        $minimumAcceptedBatch = Get-ObjectPropertyValue `
+            $policy.minimumAcceptedWorkBatchByValue `
+            $actual
+        if ($null -ne $minimumAcceptedBatch) {
+            $workBatches = @($schemaSpec.workBatches)
+            $minimumIndex = [Array]::IndexOf(
+                [object[]]$workBatches,
+                [object][string]$minimumAcceptedBatch)
+            $acceptedIndex = if ($authority.ContainsKey('accepted_work_batch')) {
+                [Array]::IndexOf(
+                    [object[]]$workBatches,
+                    [object]$authority.accepted_work_batch)
+            }
+            else {
+                -1
+            }
+            if ($minimumIndex -lt 0) {
+                Add-AuthorityError (
+                    "SECURITY_FACT_POLICY_BATCH_INVALID key={0} value={1} batch={2}" -f
+                    $key,
+                    $actual,
+                    $minimumAcceptedBatch) 'CONTRACT_MISMATCH'
+            }
+            elseif ($acceptedIndex -lt $minimumIndex) {
+                Add-AuthorityError (
+                    "SAFETY_FACT_PREREQUISITE_MISSING key={0} value={1} minimum_accepted_batch={2}" -f
+                    $key,
+                    $actual,
+                    $minimumAcceptedBatch) 'SECURITY_DEFAULT_REGRESSION'
+            }
+        }
+    }
+
     if ($authority.authority_schema -eq '1') {
         if ($authority.current_phase -ne [string]$schemaSpec.currentPhase) {
             Add-AuthorityError "CURRENT_PHASE_UNSUPPORTED actual=$($authority.current_phase)"
@@ -237,6 +286,24 @@ if ($null -ne $schemaSpec -and $null -ne $authority) {
         }
         if ($workIndex -lt 0) {
             Add-AuthorityError "WORK_BATCH_INVALID value=$($authority.work_batch)"
+        }
+
+        $acceptedSecurityFacts = Get-ObjectPropertyValue `
+            $contract.acceptedWorkBatchSecurityFacts `
+            $authority.accepted_work_batch
+        if ($null -ne $acceptedSecurityFacts) {
+            foreach ($factProperty in $acceptedSecurityFacts.PSObject.Properties) {
+                $key = $factProperty.Name
+                $expected = [string]$factProperty.Value
+                if ($authority.ContainsKey($key) -and $authority[$key] -ne $expected) {
+                    Add-AuthorityError (
+                        "ACCEPTED_WORK_BATCH_SAFETY_FACT_MISMATCH batch={0} key={1} expected={2} actual={3}" -f
+                        $authority.accepted_work_batch,
+                        $key,
+                        $expected,
+                        $authority[$key]) 'SECURITY_DEFAULT_REGRESSION'
+                }
+            }
         }
 
         if ($authority.work_batch_status -notin @($contract.workBatchStatuses)) {

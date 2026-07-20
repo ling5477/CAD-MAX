@@ -5,6 +5,9 @@ server and the C# localhost bridge.
 
 - cad-command.schema.json defines a versioned command request.
 - cad-result.schema.json defines the common result envelope.
+- bridge-endpoints.schema.json defines health, version, capabilities, and heartbeat data.
+- bridge-token.schema.json defines the protected machine-local token file shape; token values
+  never belong in repository content or evidence.
 - JSON property names are camelCase.
 - Every request carries UUID requestId and traceId values.
 - Unknown commands fail closed with NOT_IMPLEMENTED.

@@ -278,6 +278,43 @@ try {
         throw [InvalidOperationException]::new('SCRIPT_OUTPUT_PATH_DISCLOSURE')
     }
 
+    foreach ($requiredScript in @(
+            'New-BridgeToken.ps1',
+            'Test-BridgeToken.ps1',
+            'Test-LoopbackBridge.ps1',
+            'Test-RealAutoCADBridge.ps1')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $requiredScript) -PathType Leaf)) {
+            throw [InvalidOperationException]::new('BRIDGE_SCRIPT_MISSING')
+        }
+    }
+    $tokenScriptContent = Get-Content -LiteralPath (
+        Join-Path $PSScriptRoot 'New-BridgeToken.ps1') -Raw
+    foreach ($requiredTokenControl in @(
+            'RandomNumberGenerator',
+            'SetAccessRuleProtection',
+            'File]::Replace',
+            'TOKEN_ALREADY_CONFIGURED',
+            'Rotate')) {
+        if (-not $tokenScriptContent.Contains($requiredTokenControl)) {
+            throw [InvalidOperationException]::new('BRIDGE_TOKEN_CONTROL_MISSING')
+        }
+    }
+    $realBridgeScriptContent = Get-Content -LiteralPath (
+        Join-Path $PSScriptRoot 'Test-RealAutoCADBridge.ps1') -Raw
+    if ($realBridgeScriptContent -match '(?i)(?:ComObject|GetActiveObject|Start-Process\s+.*acad)') {
+        throw [InvalidOperationException]::new('REAL_BRIDGE_COM_OR_AUTOSTART_DETECTED')
+    }
+    $tokenTestOutput = @(& $powerShellExecutable `
+            -NoLogo `
+            -NoProfile `
+            -ExecutionPolicy Bypass `
+            -File (Join-Path $PSScriptRoot 'Test-BridgeToken.ps1') 2>&1)
+    if ($LASTEXITCODE -ne 0 -or
+        ($tokenTestOutput -join "`n") -match '(?i)(?:[A-Z]:[\\/]|\\\\)' -or
+        ($tokenTestOutput -join "`n") -notmatch '"result":"PASS"') {
+        throw [InvalidOperationException]::new('BRIDGE_TOKEN_SCRIPT_TEST_FAILED')
+    }
+
 }
 catch {
     $testFailure = $_.Exception
@@ -316,7 +353,7 @@ if ($null -ne $testFailure) {
 
 [pscustomobject]@{
     result = 'PASS'
-    cases = 18
+    cases = 24
     fixtures = 'EMPTY_PLACEHOLDERS_IN_GIT_IGNORED_PATH'
     paths = 'REDACTED'
 } | ConvertTo-Json

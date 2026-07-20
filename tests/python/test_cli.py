@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+import pytest
+
+from cad_max_mcp.backends import AutoCadBridgeBackend
 from cad_max_mcp.cli import main
 
 
@@ -17,3 +21,38 @@ def test_doctor_outputs_json_and_returns_zero(capsys: object) -> None:
     assert report["configurationValid"] is True
     assert report["httpHost"] == "127.0.0.1"
     assert report["allowWrite"] is False
+
+
+def test_bridge_doctor_unconfigured_returns_nonzero_json(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: object,
+) -> None:
+    monkeypatch.delenv("CAD_MAX_BRIDGE_URL", raising=False)
+    monkeypatch.delenv("CAD_MAX_BRIDGE_TOKEN_FILE", raising=False)
+
+    assert main(["bridge-doctor"]) == 2
+
+    report = json.loads(capsys.readouterr().out)  # type: ignore[attr-defined]
+    assert report["status"] == "BACKEND_NOT_CONFIGURED"
+    assert report["connectionState"] == "NOT_CONFIGURED"
+
+
+def test_bridge_doctor_success_exit_code_is_forwarded(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: object,
+) -> None:
+    async def fake_doctor(
+        self: AutoCadBridgeBackend,
+    ) -> tuple[int, dict[str, object]]:
+        del self
+        return 0, {"schemaVersion": "1.0", "status": "OK", "connected": True}
+
+    monkeypatch.setenv("CAD_MAX_BRIDGE_URL", "http://127.0.0.1:47770")
+    monkeypatch.setenv("CAD_MAX_BRIDGE_TOKEN_FILE", str(tmp_path / "token.json"))
+    monkeypatch.setattr(AutoCadBridgeBackend, "bridge_doctor", fake_doctor)
+
+    assert main(["bridge-doctor"]) == 0
+
+    report = json.loads(capsys.readouterr().out)  # type: ignore[attr-defined]
+    assert report == {"connected": True, "schemaVersion": "1.0", "status": "OK"}

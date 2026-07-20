@@ -1,7 +1,7 @@
 {
   "version": 1,
   "dependencies": {
-    "net8.0": {
+    "net8.0-windows7.0": {
       "Microsoft.AspNetCore.Mvc.Testing": {
         "type": "Direct",
         "requested": "[8.0.29, )",
@@ -415,6 +415,13 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
+      "cadmax.autocad.plugin": {
+        "type": "Project",
+        "dependencies": {
+          "CadMax.Bridge.Core": "[1.0.0, )",
+          "CadMax.Contracts": "[1.0.0, )"
+        }
+      },
       "cadmax.bridge.core": {
         "type": "Project",
         "dependencies": {
@@ -424,6 +431,7 @@
       "cadmax.bridge.host": {
         "type": "Project",
         "dependencies": {
+          "CadMax.AutoCAD.Plugin": "[0.1.0, )",
           "CadMax.Bridge.Core": "[1.0.0, )",
           "CadMax.Contracts": "[1.0.0, )"
         }

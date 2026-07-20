@@ -3,6 +3,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using CadMax.Bridge.Core;
+using CadMax.Contracts;
 
 namespace CadMax.AutoCAD.Plugin;
 
@@ -14,6 +16,7 @@ public enum PluginLifecycleState
 {
     Stopped,
     Starting,
+    Listening,
     Ready,
     Degraded,
     Failed,
@@ -65,10 +68,13 @@ public sealed class PluginLifecycleStateMachine
         (currentState, nextState) switch
         {
             (PluginLifecycleState.Stopped, PluginLifecycleState.Starting) => true,
-            (PluginLifecycleState.Starting, PluginLifecycleState.Ready) => true,
+            (PluginLifecycleState.Starting, PluginLifecycleState.Listening) => true,
             (PluginLifecycleState.Starting, PluginLifecycleState.Degraded) => true,
             (PluginLifecycleState.Starting, PluginLifecycleState.Failed) => true,
             (PluginLifecycleState.Starting, PluginLifecycleState.Stopping) => true,
+            (PluginLifecycleState.Listening, PluginLifecycleState.Ready) => true,
+            (PluginLifecycleState.Listening, PluginLifecycleState.Degraded) => true,
+            (PluginLifecycleState.Listening, PluginLifecycleState.Stopping) => true,
             (PluginLifecycleState.Ready, PluginLifecycleState.Degraded) => true,
             (PluginLifecycleState.Ready, PluginLifecycleState.Stopping) => true,
             (PluginLifecycleState.Degraded, PluginLifecycleState.Ready) => true,
@@ -178,6 +184,7 @@ public sealed record PluginStatus(
     string SchemaVersion,
     string LifecycleState,
     int AutoCADYear,
+    string? SafeErrorCode,
     bool ReadOnly,
     bool AllowWrite,
     bool AllowScript);
@@ -188,8 +195,13 @@ public enum PluginLifecycleEventType
     PluginInitializeStarted,
     PluginInitializeSucceeded,
     PluginInitializeFailed,
+    BridgeListenerStarted,
+    BridgeListenerFaulted,
+    BridgeListenerStopped,
+    BridgeShutdownDrainTimeout,
     PluginTerminateStarted,
     PluginTerminateSucceeded,
+    PluginTerminateFailed,
 }
 
 /// <summary>
@@ -245,8 +257,14 @@ public sealed record PluginLifecycleEvidenceEntry(
             PluginLifecycleEventType.PluginInitializeStarted => "PLUGIN_INITIALIZE_STARTED",
             PluginLifecycleEventType.PluginInitializeSucceeded => "PLUGIN_INITIALIZE_SUCCEEDED",
             PluginLifecycleEventType.PluginInitializeFailed => "PLUGIN_INITIALIZE_FAILED",
+            PluginLifecycleEventType.BridgeListenerStarted => "BRIDGE_LISTENER_STARTED",
+            PluginLifecycleEventType.BridgeListenerFaulted => "BRIDGE_LISTENER_FAULTED",
+            PluginLifecycleEventType.BridgeListenerStopped => "BRIDGE_LISTENER_STOPPED",
+            PluginLifecycleEventType.BridgeShutdownDrainTimeout =>
+                "BRIDGE_SHUTDOWN_DRAIN_TIMEOUT",
             PluginLifecycleEventType.PluginTerminateStarted => "PLUGIN_TERMINATE_STARTED",
             PluginLifecycleEventType.PluginTerminateSucceeded => "PLUGIN_TERMINATE_SUCCEEDED",
+            PluginLifecycleEventType.PluginTerminateFailed => "PLUGIN_TERMINATE_FAILED",
             _ => "UNKNOWN_EVENT",
         };
 
@@ -348,34 +366,43 @@ public sealed class BoundedJsonLineEvidenceWriter : IPluginLifecycleEvidenceWrit
 /// </summary>
 public sealed class PluginLifecycleController
 {
+    public static readonly TimeSpan ShutdownDeadline = TimeSpan.FromMilliseconds(2000);
     private readonly object syncRoot = new();
     private readonly PluginMetadata metadata;
     private readonly IPluginLifecycleEvidenceWriter evidenceWriter;
+    private readonly IBridgeTokenSource tokenSource;
+    private readonly ILoopbackBridgeServerFactory serverFactory;
+    private readonly LoopbackBridgeOptions bridgeOptions;
     private readonly PluginLifecycleStateMachine stateMachine = new();
     private PluginMetadata? validatedMetadata;
     private PluginRuntimeInfo? runtimeInfo;
+    private BridgeTokenCredential? tokenCredential;
+    private BridgeInstanceResponseService? responseService;
+    private ILoopbackBridgeServer? bridgeServer;
+    private string? safeErrorCode;
     private bool terminationEvidenceComplete = true;
 
     /// <summary>Creates a controller for one AutoCAD process lifetime.</summary>
     public PluginLifecycleController(
         PluginMetadata metadata,
-        IPluginLifecycleEvidenceWriter evidenceWriter)
+        IPluginLifecycleEvidenceWriter evidenceWriter,
+        IBridgeTokenSource? tokenSource = null,
+        ILoopbackBridgeServerFactory? serverFactory = null,
+        LoopbackBridgeOptions? bridgeOptions = null)
     {
         this.metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
         this.evidenceWriter = evidenceWriter
             ?? throw new ArgumentNullException(nameof(evidenceWriter));
+        this.tokenSource = tokenSource ?? new FileBridgeTokenSource();
+        this.serverFactory = serverFactory ?? new LoopbackBridgeServerFactory();
+        this.bridgeOptions = bridgeOptions ?? new LoopbackBridgeOptions();
+        this.bridgeOptions.Validate();
     }
 
     /// <summary>Gets the current lifecycle state.</summary>
     public PluginLifecycleState State
     {
-        get
-        {
-            lock (syncRoot)
-            {
-                return stateMachine.State;
-            }
-        }
+        get => stateMachine.State;
     }
 
     /// <summary>
@@ -400,6 +427,10 @@ public sealed class PluginLifecycleController
 
             validatedMetadata = null;
             runtimeInfo = null;
+            tokenCredential = null;
+            responseService = null;
+            bridgeServer = null;
+            safeErrorCode = null;
             terminationEvidenceComplete = false;
             stateMachine.TransitionTo(PluginLifecycleState.Starting);
             var initializeStartedRecorded = TryAppend(
@@ -428,9 +459,74 @@ public sealed class PluginLifecycleController
             {
                 metadata.Validate();
                 requestedRuntimeInfo.Validate();
+                validatedMetadata = metadata;
+                runtimeInfo = requestedRuntimeInfo;
+
+                var tokenResult = tokenSource.Load();
+                if (!tokenResult.Success || tokenResult.Credential is null)
+                {
+                    return DegradeInitialization(
+                        tokenResult.SafeErrorCode ?? "TOKEN_UNAVAILABLE",
+                        processId,
+                        requestedRuntimeInfo);
+                }
+
+                tokenCredential = tokenResult.Credential;
+                responseService = new BridgeInstanceResponseService(
+                    new BridgeInstanceMetadata(
+                        "CadMax.AutoCAD.Bridge",
+                        metadata.PluginVersion,
+                        requestedRuntimeInfo.AdapterVersion,
+                        requestedRuntimeInfo.AutoCADYear,
+                        requestedRuntimeInfo.AutoCADProductVersion,
+                        "net8.0-windows",
+                        requestedRuntimeInfo.IsAutoCADHostProcess,
+                        DevelopmentHost: false),
+                    BridgePluginState.Starting);
+                bridgeServer = serverFactory.Create(
+                    bridgeOptions,
+                    tokenCredential,
+                    responseService,
+                    OnListenerFault);
+                var startError = bridgeServer.TryStart();
+                if (startError is not null)
+                {
+                    return DegradeInitialization(startError, processId, requestedRuntimeInfo);
+                }
+
+                stateMachine.TransitionTo(PluginLifecycleState.Listening);
+                responseService.SetPluginState(BridgePluginState.Listening);
+                if (!TryAppend(
+                        PluginLifecycleEventType.BridgeListenerStarted,
+                        PluginLifecycleState.Starting,
+                        PluginLifecycleState.Listening,
+                        success: true,
+                        processId: processId,
+                        evidenceRuntimeInfo: requestedRuntimeInfo))
+                {
+                    return DegradeInitialization(
+                        "LIFECYCLE_EVIDENCE_UNAVAILABLE",
+                        processId,
+                        requestedRuntimeInfo);
+                }
+
+                using var selfProbeDeadline = new CancellationTokenSource(
+                    TimeSpan.FromMilliseconds(2000));
+                var selfProbeSucceeded = bridgeServer
+                    .RunAuthenticatedSelfProbeAsync(selfProbeDeadline.Token)
+                    .GetAwaiter()
+                    .GetResult();
+                if (!selfProbeSucceeded)
+                {
+                    return DegradeInitialization(
+                        "SELF_PROBE_FAILED",
+                        processId,
+                        requestedRuntimeInfo);
+                }
+
                 var initializeSucceededRecorded = TryAppend(
                     PluginLifecycleEventType.PluginInitializeSucceeded,
-                    PluginLifecycleState.Starting,
+                    PluginLifecycleState.Listening,
                     PluginLifecycleState.Ready,
                     success: true,
                     processId: processId,
@@ -438,34 +534,35 @@ public sealed class PluginLifecycleController
 
                 if (!initializeSucceededRecorded)
                 {
-                    stateMachine.TransitionTo(PluginLifecycleState.Degraded);
-                    _ = TryAppend(
-                        PluginLifecycleEventType.PluginInitializeFailed,
-                        PluginLifecycleState.Starting,
-                        PluginLifecycleState.Degraded,
-                        success: false,
-                        safeErrorCode: "LIFECYCLE_EVIDENCE_UNAVAILABLE",
-                        processId: processId,
-                        evidenceRuntimeInfo: requestedRuntimeInfo);
-                    return false;
+                    return DegradeInitialization(
+                        "LIFECYCLE_EVIDENCE_UNAVAILABLE",
+                        processId,
+                        requestedRuntimeInfo);
                 }
 
-                // READY means the SDK-bound plugin host is initialized, not that MCP is connected.
-                // It is exposed only after host attestation and required evidence are durable.
-                validatedMetadata = metadata;
-                runtimeInfo = requestedRuntimeInfo;
                 stateMachine.TransitionTo(PluginLifecycleState.Ready);
+                responseService.SetPluginState(BridgePluginState.Ready);
                 return true;
             }
             catch (Exception)
             {
-                stateMachine.TransitionTo(PluginLifecycleState.Failed);
+                StopAndReleaseBridge();
+                var previousState = stateMachine.State;
+                if (previousState == PluginLifecycleState.Starting)
+                {
+                    stateMachine.TransitionTo(PluginLifecycleState.Failed);
+                }
+                else if (previousState is PluginLifecycleState.Listening)
+                {
+                    stateMachine.TransitionTo(PluginLifecycleState.Degraded);
+                }
+                safeErrorCode = "PLUGIN_INITIALIZATION_FAILED";
                 _ = TryAppend(
                     PluginLifecycleEventType.PluginInitializeFailed,
-                    PluginLifecycleState.Starting,
-                    PluginLifecycleState.Failed,
+                    previousState,
+                    stateMachine.State,
                     success: false,
-                    safeErrorCode: "PLUGIN_INITIALIZATION_FAILED",
+                    safeErrorCode: safeErrorCode,
                     processId: processId,
                     evidenceRuntimeInfo: requestedRuntimeInfo);
                 return false;
@@ -475,7 +572,7 @@ public sealed class PluginLifecycleController
 
     /// <summary>
     /// Terminates the lifecycle without throwing into AutoCAD. A second call after STOPPED is
-    /// an idempotent success. This batch owns no thread, listener, timer, or document resource.
+    /// an idempotent success. Listener drain is bounded by the fixed two-second deadline.
     /// </summary>
     public bool Terminate(int? processId = null)
     {
@@ -497,15 +594,45 @@ public sealed class PluginLifecycleController
                     success: true,
                     processId: processId);
 
+                responseService?.SetPluginState(BridgePluginState.Stopping);
+                var drained = bridgeServer?.StopAsync(ShutdownDeadline)
+                    .GetAwaiter()
+                    .GetResult() ?? true;
+                if (!drained)
+                {
+                    safeErrorCode = "SHUTDOWN_DRAIN_TIMEOUT";
+                    _ = TryAppend(
+                        PluginLifecycleEventType.BridgeShutdownDrainTimeout,
+                        PluginLifecycleState.Stopping,
+                        PluginLifecycleState.Stopping,
+                        success: false,
+                        safeErrorCode: safeErrorCode,
+                        processId: processId);
+                }
+
+                var listenerStoppedRecorded = TryAppend(
+                    PluginLifecycleEventType.BridgeListenerStopped,
+                    PluginLifecycleState.Stopping,
+                    PluginLifecycleState.Stopping,
+                    success: drained,
+                    safeErrorCode: drained ? null : safeErrorCode,
+                    processId: processId);
+                ReleaseBridgeObjects();
                 stateMachine.TransitionTo(PluginLifecycleState.Stopped);
                 var terminateSucceededRecorded = TryAppend(
-                    PluginLifecycleEventType.PluginTerminateSucceeded,
+                    drained
+                        ? PluginLifecycleEventType.PluginTerminateSucceeded
+                        : PluginLifecycleEventType.PluginTerminateFailed,
                     PluginLifecycleState.Stopping,
                     PluginLifecycleState.Stopped,
-                    success: true,
+                    success: drained,
+                    safeErrorCode: drained ? null : safeErrorCode,
                     processId: processId);
                 terminationEvidenceComplete =
-                    terminateStartedRecorded && terminateSucceededRecorded;
+                    drained
+                    && terminateStartedRecorded
+                    && listenerStoppedRecorded
+                    && terminateSucceededRecorded;
                 return terminationEvidenceComplete;
             }
             catch (Exception)
@@ -530,10 +657,89 @@ public sealed class PluginLifecycleController
                 validatedMetadata?.SchemaVersion ?? "1.0",
                 stateMachine.State.ToString().ToUpperInvariant(),
                 runtimeInfo?.AutoCADYear ?? 0,
+                PluginEvidenceSanitizer.SafeOptionalErrorCode(safeErrorCode),
                 ReadOnly: true,
                 AllowWrite: false,
                 AllowScript: false);
         }
+    }
+
+    private bool DegradeInitialization(
+        string errorCode,
+        int? processId,
+        PluginRuntimeInfo requestedRuntimeInfo)
+    {
+        var previousState = stateMachine.State;
+        safeErrorCode = PluginEvidenceSanitizer.SafeErrorCode(errorCode);
+        responseService?.SetPluginState(BridgePluginState.Degraded);
+        StopAndReleaseBridge();
+        if (stateMachine.State is PluginLifecycleState.Starting or PluginLifecycleState.Listening)
+        {
+            stateMachine.TransitionTo(PluginLifecycleState.Degraded);
+        }
+
+        _ = TryAppend(
+            PluginLifecycleEventType.PluginInitializeFailed,
+            previousState,
+            PluginLifecycleState.Degraded,
+            success: false,
+            safeErrorCode: safeErrorCode,
+            processId: processId,
+            evidenceRuntimeInfo: requestedRuntimeInfo);
+        return false;
+    }
+
+    private void OnListenerFault(string errorCode)
+    {
+        lock (syncRoot)
+        {
+            var previousState = stateMachine.State;
+            if (previousState is not (PluginLifecycleState.Listening or PluginLifecycleState.Ready))
+            {
+                return;
+            }
+
+            safeErrorCode = PluginEvidenceSanitizer.SafeErrorCode(errorCode);
+            responseService?.SetPluginState(BridgePluginState.Degraded);
+            stateMachine.TransitionTo(PluginLifecycleState.Degraded);
+            _ = TryAppend(
+                PluginLifecycleEventType.BridgeListenerFaulted,
+                previousState,
+                PluginLifecycleState.Degraded,
+                success: false,
+                safeErrorCode: safeErrorCode);
+        }
+    }
+
+    private void StopAndReleaseBridge()
+    {
+        try
+        {
+            _ = bridgeServer?.StopAsync(ShutdownDeadline).GetAwaiter().GetResult();
+        }
+        catch (Exception)
+        {
+            safeErrorCode ??= "LISTENER_START_FAILED";
+        }
+
+        ReleaseBridgeObjects();
+    }
+
+    private void ReleaseBridgeObjects()
+    {
+        try
+        {
+            bridgeServer?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+        catch (Exception)
+        {
+            // Dispose failure is contained; listener Stop already force-closes the socket.
+        }
+
+        bridgeServer = null;
+        tokenCredential?.Dispose();
+        tokenCredential = null;
+        responseService = null;
     }
 
     private bool TryAppend(
@@ -611,4 +817,7 @@ internal static partial class PluginEvidenceSanitizer
         value is not null && SafeErrorCodeRegex().IsMatch(value)
             ? value
             : "INTERNAL_ERROR";
+
+    public static string? SafeOptionalErrorCode(string? value) =>
+        value is null ? null : SafeErrorCode(value);
 }

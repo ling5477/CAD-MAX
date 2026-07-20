@@ -1,9 +1,11 @@
 using System.Net;
+using CadMax.AutoCAD.Plugin;
 using CadMax.Bridge.Core;
 using CadMax.Contracts;
 using Microsoft.AspNetCore.Http.Json;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.ClearProviders();
 builder.WebHost.UseUrls(BridgeBinding.Resolve());
 builder.Services.Configure<JsonOptions>(options =>
 {
@@ -16,46 +18,109 @@ builder.Services.Configure<JsonOptions>(options =>
 });
 builder.Services.AddCadMaxBridgeCore();
 
+var tokenSource = new FileBridgeTokenSource(
+    Environment.GetEnvironmentVariable("CAD_MAX_BRIDGE_TOKEN_FILE"));
+var tokenResult = tokenSource.Load();
+if (!tokenResult.Success || tokenResult.Credential is null)
+{
+    Console.Error.WriteLine($"ERROR / {tokenResult.SafeErrorCode ?? "TOKEN_UNAVAILABLE"}");
+    Environment.ExitCode = 1;
+    return;
+}
+
+var credential = tokenResult.Credential;
+var responseService = new BridgeInstanceResponseService(
+    new BridgeInstanceMetadata(
+        "CadMax.Bridge.Host",
+        typeof(BridgeInstanceResponseService).Assembly.GetName().Version?.ToString(3)
+            ?? "UNKNOWN",
+        "NOT_APPLICABLE",
+        0,
+        "NOT_CONNECTED",
+        "net8.0-windows",
+        IsAutoCADHostProcess: false,
+        DevelopmentHost: true),
+    BridgePluginState.Ready);
+
+builder.Services.AddSingleton(responseService);
 var app = builder.Build();
+app.Lifetime.ApplicationStopping.Register(credential.Dispose);
 
-app.MapGet("/health", () =>
+app.Use(async (context, next) =>
 {
-    var requestId = Guid.NewGuid().ToString();
-    var traceId = Guid.NewGuid().ToString();
-    return CadResultEnvelope.Ok(
-        requestId,
-        traceId,
-        "CAD-MAX bridge host is healthy",
-        new
-        {
-            service = "CadMax.Bridge.Host",
-            schemaVersion = CadProtocol.SchemaVersion,
-            autocadConnected = false,
-        });
-});
-
-app.MapGet("/v1/capabilities", (CadCommandRegistry registry) =>
-{
-    var requestId = Guid.NewGuid().ToString();
-    var traceId = Guid.NewGuid().ToString();
-    var capabilities = new[]
+    if (!credential.IsAuthorized(context.Request.Headers.Authorization.ToString()))
     {
-        new CadCapabilityDescription("bridge.health", true, true),
-        new CadCapabilityDescription("bridge.capabilities", true, true),
-        new CadCapabilityDescription("bridge.commands", true, true),
-        new CadCapabilityDescription("drawing.status", false, true),
-        new CadCapabilityDescription("drawing.write", false, false),
-    };
-    return CadResultEnvelope.Ok(
-        requestId,
-        traceId,
-        "CAD-MAX bridge capability inventory",
-        new
+        await BridgeHttpResponses.WriteAsync(
+            context,
+            401,
+            CadResultEnvelope.Failure(
+                Guid.NewGuid().ToString("D"),
+                Guid.NewGuid().ToString("D"),
+                CadStatus.Unauthorized,
+                "CAD-MAX bridge authorization failed"));
+        return;
+    }
+
+    var route = context.Request.Path.Value ?? string.Empty;
+    if (BridgeRoutes.Production.Contains(route))
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
         {
-            capabilities,
-            registeredCommands = registry.ListCommandNames(),
-        });
+            context.Response.Headers.Allow = "GET";
+            await BridgeHttpResponses.WriteAsync(
+                context,
+                405,
+                CadResultEnvelope.Failure(
+                    Guid.NewGuid().ToString("D"),
+                    Guid.NewGuid().ToString("D"),
+                    CadStatus.MethodNotAllowed,
+                    "CAD-MAX bridge permits GET only"));
+            return;
+        }
+
+        if (context.Request.QueryString.HasValue)
+        {
+            await BridgeHttpResponses.WriteAsync(
+                context,
+                400,
+                CadResultEnvelope.Failure(
+                    Guid.NewGuid().ToString("D"),
+                    Guid.NewGuid().ToString("D"),
+                    CadStatus.QueryNotAllowed,
+                    "CAD-MAX bridge query strings are not allowed"));
+            return;
+        }
+
+        if (context.Request.ContentLength is > 0
+            || context.Request.Headers.ContainsKey("Transfer-Encoding"))
+        {
+            await BridgeHttpResponses.WriteAsync(
+                context,
+                400,
+                CadResultEnvelope.Failure(
+                    Guid.NewGuid().ToString("D"),
+                    Guid.NewGuid().ToString("D"),
+                    CadStatus.RequestBodyNotAllowed,
+                    "CAD-MAX bridge request bodies are not allowed"));
+            return;
+        }
+    }
+
+    await next(context);
 });
+
+foreach (var route in BridgeRoutes.Production)
+{
+    var mappedRoute = route;
+    app.MapGet(mappedRoute, (BridgeInstanceResponseService service) =>
+    {
+        var envelope = service.CreateResponse(
+            mappedRoute,
+            Guid.NewGuid().ToString("D"),
+            Guid.NewGuid().ToString("D"));
+        return Results.Json(envelope, CadJson.Options, statusCode: 200);
+    });
+}
 
 app.MapPost(
     "/v1/commands",
@@ -65,32 +130,66 @@ app.MapPost(
         HttpContext httpContext) =>
         await dispatcher.DispatchAsync(request, httpContext.RequestAborted));
 
+app.MapFallback(async context =>
+{
+    await BridgeHttpResponses.WriteAsync(
+        context,
+        404,
+        CadResultEnvelope.Failure(
+            Guid.NewGuid().ToString("D"),
+            Guid.NewGuid().ToString("D"),
+            CadStatus.RouteNotFound,
+            "CAD-MAX bridge route was not found"));
+});
+
 app.Run();
 
-/// <summary>
-/// Validates the development-host binding before Kestrel starts.
-/// </summary>
+/// <summary>Validates the development-host binding before Kestrel starts.</summary>
 internal static class BridgeBinding
 {
-    /// <summary>Resolve the local-only URL from environment or its safe default.</summary>
+    internal const string DefaultUrl = "http://127.0.0.1:47779";
+
+    /// <summary>Resolve the development-only URL from its dedicated environment setting.</summary>
     internal static string Resolve()
     {
-        var value = Environment.GetEnvironmentVariable("CAD_MAX_BRIDGE_URL")
-            ?? "http://127.0.0.1:47770";
+        var value = Environment.GetEnvironmentVariable("CAD_MAX_DEVELOPMENT_BRIDGE_URL")
+            ?? DefaultUrl;
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
-            || uri.Scheme is not ("http" or "https")
-            || !IsLoopback(uri.Host))
+            || uri.Scheme != Uri.UriSchemeHttp
+            || !IPAddress.TryParse(uri.Host, out var address)
+            || !address.Equals(IPAddress.Loopback)
+            || uri.Port is < 1 or > 65_535
+            || uri.AbsolutePath != "/"
+            || !string.IsNullOrEmpty(uri.Query)
+            || !string.IsNullOrEmpty(uri.Fragment)
+            || !string.IsNullOrEmpty(uri.UserInfo))
         {
             throw new InvalidOperationException(
-                "CAD_MAX_BRIDGE_URL must use an explicit loopback host.");
+                "CAD_MAX_DEVELOPMENT_BRIDGE_URL must use explicit IPv4 loopback HTTP.");
         }
 
         return value;
     }
+}
 
-    private static bool IsLoopback(string host) =>
-        string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
-        || (IPAddress.TryParse(host, out var address) && IPAddress.IsLoopback(address));
+internal static class BridgeHttpResponses
+{
+    internal static async Task WriteAsync(
+        HttpContext context,
+        int httpStatus,
+        CadResultEnvelope envelope)
+    {
+        context.Response.StatusCode = httpStatus;
+        context.Response.ContentType = "application/json; charset=utf-8";
+        context.Response.Headers.CacheControl = "no-store";
+        context.Response.Headers.XContentTypeOptions = "nosniff";
+        if (httpStatus == 401)
+        {
+            context.Response.Headers.WWWAuthenticate = "Bearer";
+        }
+
+        await context.Response.WriteAsJsonAsync(envelope, CadJson.Options);
+    }
 }
 
 /// <summary>Public marker used by ASP.NET integration tests.</summary>

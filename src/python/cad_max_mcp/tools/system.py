@@ -45,6 +45,11 @@ async def cad_system_operation(
 ) -> ResultEnvelope:
     """Return real server/configuration metadata for the requested operation."""
     probe = await backend.health()
+    bridge_result = (
+        probe.envelope
+        if operation == "health" and probe.envelope is not None
+        else await backend.bridge_system(operation)
+    )
     common: dict[str, Any] = {
         "serverName": SERVER_NAME,
         "serverVersion": __version__,
@@ -53,6 +58,8 @@ async def cad_system_operation(
         "bridgeConfigured": probe.configured,
         "bridgeAvailable": probe.available,
         "bridgeStatus": probe.status.value,
+        "bridgeConnectionState": backend.connection_state.value,
+        "autoCadBridge": bridge_result.to_wire(),
         "readOnly": settings.read_only,
         "allowWrite": settings.allow_write,
         "allowScript": settings.allow_script,

@@ -43,7 +43,11 @@ class CadMaxSettings(BaseSettings):
     http_port: int = Field(default=47771, ge=1, le=65535)
     http_path: str = "/mcp"
     bridge_url: str | None = None
+    bridge_token_file: Path | None = None
     bridge_timeout_seconds: float = Field(default=5.0, gt=0, le=120)
+    bridge_connect_timeout_seconds: float = Field(default=1.0, gt=0, le=5)
+    bridge_read_timeout_seconds: float = Field(default=2.0, gt=0, le=5)
+    bridge_max_response_bytes: int = Field(default=65_536, ge=1024, le=65_536)
     allowed_roots: list[Path] = Field(default_factory=list)
 
     @field_validator("http_host")
@@ -69,11 +73,29 @@ class CadMaxSettings(BaseSettings):
         if value is None or not value.strip():
             return None
         parsed = urlparse(value)
-        if parsed.scheme not in {"http", "https"} or parsed.hostname is None:
+        if parsed.scheme != "http" or parsed.hostname is None:
             raise ValueError("bridgeUrl must be an HTTP URL")
-        if not is_loopback_host(parsed.hostname):
-            raise ValueError("bridgeUrl must target loopback")
+        if parsed.hostname != "127.0.0.1":
+            raise ValueError("bridgeUrl must target explicit IPv4 loopback")
+        if (
+            parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or parsed.path not in {"", "/"}
+            or parsed.port is None
+            or parsed.port == 0
+        ):
+            raise ValueError("bridgeUrl must be an origin without credentials, path, or query")
         return value.rstrip("/")
+
+    @field_validator("bridge_token_file")
+    @classmethod
+    def require_absolute_bridge_token_file(cls, value: Path | None) -> Path | None:
+        """A token path must not depend on the server working directory."""
+        if value is not None and not value.is_absolute():
+            raise ValueError("bridgeTokenFile must be absolute")
+        return value
 
     @field_validator("allowed_roots")
     @classmethod

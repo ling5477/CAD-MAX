@@ -44,7 +44,14 @@ function New-Schema2Status {
         [string] $WorkStatus = 'NOT_STARTED',
         [string] $WorkCommit = 'NONE',
         [string] $WorkRun = 'NOT_RUN',
-        [string] $NextAction = 'IMPLEMENT_PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP'
+        [string] $NextAction = 'IMPLEMENT_PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP',
+        [string] $AutoCadRuntime = 'NOT_CONNECTED',
+        [string] $DwgRead = 'NOT_IMPLEMENTED',
+        [string] $DwgWrite = 'NOT_IMPLEMENTED',
+        [string] $ReadOnly = 'ENABLED',
+        [string] $AllowWrite = 'DISABLED',
+        [string] $AllowScript = 'DISABLED',
+        [string] $HttpBinding = 'LOOPBACK_ONLY'
     )
 
     $workBodyStatus = $WorkStatus.Replace('|', ' / ')
@@ -64,13 +71,13 @@ work_batch_status=$WorkStatus
 work_batch_commit=$WorkCommit
 work_batch_ci_run=$WorkRun
 next_action=$NextAction
-autocad_runtime=NOT_CONNECTED
-dwg_read=NOT_IMPLEMENTED
-dwg_write=NOT_IMPLEMENTED
-read_only=ENABLED
-allow_write=DISABLED
-allow_script=DISABLED
-http_binding=LOOPBACK_ONLY
+autocad_runtime=$AutoCadRuntime
+dwg_read=$DwgRead
+dwg_write=$DwgWrite
+read_only=$ReadOnly
+allow_write=$AllowWrite
+allow_script=$AllowScript
+http_binding=$HttpBinding
 cad-max-current-authority:end -->
 
 - Phase 1：`IN PROGRESS / NOT FROZEN`（进行中 / 未冻结）。
@@ -219,6 +226,61 @@ try {
         -RoadmapAction 'IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE'
     Assert-Positive 'return to Phase 1.2 after maintenance' $maintenanceReturn
 
+    $phase12AcceptedStatus = New-Schema2Status `
+        -AcceptedBatch 'PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE' `
+        -AcceptedCommit 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' `
+        -AcceptedRun '789' `
+        -WorkBatch 'PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH' `
+        -NextAction 'IMPLEMENT_PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH' `
+        -AutoCadRuntime 'CONNECTED'
+    $phase12Accepted = New-Fixture `
+        -Name 'phase-1-2-accepted-positive' `
+        -StatusContent $phase12AcceptedStatus `
+        -RoadmapAction 'IMPLEMENT_PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH'
+    Assert-Positive 'Phase 1.2 accepted with connected runtime' $phase12Accepted
+
+    $earlyConnectedStatus = New-Schema2Status `
+        -AcceptedBatch 'PHASE_1_MAINTENANCE_DEPENDENCIES' `
+        -AcceptedCommit 'dddddddddddddddddddddddddddddddddddddddd' `
+        -AcceptedRun '456' `
+        -WorkBatch 'PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE' `
+        -NextAction 'IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE' `
+        -AutoCadRuntime 'CONNECTED'
+    $earlyConnected = New-Fixture `
+        -Name 'runtime-connected-before-phase-1-2-negative' `
+        -StatusContent $earlyConnectedStatus `
+        -RoadmapAction 'IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE'
+    Assert-Negative `
+        'runtime cannot be connected before Phase 1.2 acceptance' `
+        $earlyConnected `
+        'SAFETY_FACT_PREREQUISITE_MISSING key=autocad_runtime'
+
+    foreach ($case in @(
+        @{ Name = 'phase-1-2-dwg-read'; Parameter = 'DwgRead'; Value = 'IMPLEMENTED'; Key = 'dwg_read' },
+        @{ Name = 'phase-1-2-dwg-write'; Parameter = 'DwgWrite'; Value = 'IMPLEMENTED'; Key = 'dwg_write' },
+        @{ Name = 'phase-1-2-allow-write'; Parameter = 'AllowWrite'; Value = 'ENABLED'; Key = 'allow_write' },
+        @{ Name = 'phase-1-2-allow-script'; Parameter = 'AllowScript'; Value = 'ENABLED'; Key = 'allow_script' }
+    )) {
+        $parameters = @{
+            AcceptedBatch = 'PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE'
+            AcceptedCommit = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+            AcceptedRun = '789'
+            WorkBatch = 'PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH'
+            NextAction = 'IMPLEMENT_PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH'
+            AutoCadRuntime = 'CONNECTED'
+        }
+        $parameters[$case.Parameter] = $case.Value
+        $status = New-Schema2Status @parameters
+        $fixture = New-Fixture `
+            -Name ($case.Name + '-negative') `
+            -StatusContent $status `
+            -RoadmapAction 'IMPLEMENT_PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH'
+        Assert-Negative `
+            "Phase 1.2 rejects unsafe fact $($case.Key)" `
+            $fixture `
+            "SAFETY_FACT_CONTRADICTION key=$($case.Key)"
+    }
+
     $skippedMaintenanceStatus = New-Schema2Status `
         -AcceptedBatch 'PHASE_1_1_AUTOCAD_PLUGIN_BOOTSTRAP' `
         -WorkBatch 'PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE' `
@@ -269,7 +331,7 @@ try {
         @{ Name = 'allow-write'; From = 'allow_write=DISABLED'; To = 'allow_write=ENABLED'; Expected = 'SAFETY_FACT_CONTRADICTION key=allow_write' },
         @{ Name = 'allow-script'; From = 'allow_script=DISABLED'; To = 'allow_script=ENABLED'; Expected = 'SAFETY_FACT_CONTRADICTION key=allow_script' },
         @{ Name = 'dwg-write'; From = 'dwg_write=NOT_IMPLEMENTED'; To = 'dwg_write=IMPLEMENTED'; Expected = 'SAFETY_FACT_CONTRADICTION key=dwg_write' },
-        @{ Name = 'runtime-ready'; From = 'autocad_runtime=NOT_CONNECTED'; To = 'autocad_runtime=READY'; Expected = 'SAFETY_FACT_CONTRADICTION key=autocad_runtime' }
+        @{ Name = 'runtime-ready'; From = 'autocad_runtime=NOT_CONNECTED'; To = 'autocad_runtime=READY'; Expected = 'SAFETY_FACT_VALUE_INVALID key=autocad_runtime' }
     )) {
         $fixture = New-Fixture `
             -Name $case.Name `

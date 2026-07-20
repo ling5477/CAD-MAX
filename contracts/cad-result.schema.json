@@ -71,7 +71,25 @@
         "READ_ONLY",
         "NOT_IMPLEMENTED",
         "TIMEOUT",
-        "INTERNAL_ERROR"
+        "INTERNAL_ERROR",
+        "UNAUTHORIZED",
+        "METHOD_NOT_ALLOWED",
+        "ROUTE_NOT_FOUND",
+        "QUERY_NOT_ALLOWED",
+        "REQUEST_BODY_NOT_ALLOWED",
+        "HEADERS_TOO_LARGE",
+        "REQUEST_TARGET_TOO_LONG",
+        "REQUEST_TIMEOUT",
+        "SERVER_BUSY",
+        "BRIDGE_NOT_READY",
+        "BRIDGE_STOPPING",
+        "NOT_CONNECTED",
+        "SCHEMA_MISMATCH",
+        "TOKEN_NOT_CONFIGURED",
+        "TOKEN_CONFIG_INVALID",
+        "TOKEN_FILE_INSECURE",
+        "TOKEN_INVALID",
+        "TOKEN_UNAVAILABLE"
       ]
     }
   }

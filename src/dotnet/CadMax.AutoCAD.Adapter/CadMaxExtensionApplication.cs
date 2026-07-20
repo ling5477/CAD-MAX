@@ -12,8 +12,9 @@ namespace CadMax.AutoCAD.Adapter;
 /// <summary>
 /// AutoCAD 2025/2026 Managed .NET bootstrap adapter.
 /// It forwards only process lifecycle and one fixed status command to the SDK-free core.
-/// It is stateless across processes, thread-safe through the core controller, and owns no
-/// Document, Database, Editor, listener, timer, thread, transaction, or background resource.
+/// It is stateless across processes and thread-safe through the core controller. The SDK-free
+/// core owns one bounded loopback listener but no Document, Database, Editor, timer, transaction,
+/// or Autodesk object.
 /// </summary>
 public sealed class CadMaxExtensionApplication : IExtensionApplication
 {
@@ -34,8 +35,8 @@ public sealed class CadMaxExtensionApplication : IExtensionApplication
     }
 
     /// <summary>
-    /// Terminates the SDK-free lifecycle. This batch has no asynchronous or document resource
-    /// to drain; evidence failure and unexpected faults are contained.
+    /// Terminates the SDK-free lifecycle. Listener shutdown is bounded and all unexpected faults
+    /// are contained so AutoCAD shutdown cannot wait indefinitely.
     /// </summary>
     public void Terminate()
     {

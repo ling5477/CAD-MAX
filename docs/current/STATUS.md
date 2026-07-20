@@ -4,16 +4,16 @@
 authority_schema=2
 current_phase=PHASE_1
 phase_status=IN_PROGRESS|NOT_FROZEN
-accepted_work_batch=PHASE_1_MAINTENANCE_DEPENDENCIES
+accepted_work_batch=PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE
 accepted_work_batch_status=ACCEPTED|CI_GREEN
-accepted_work_batch_commit=ba69004657adaef217ed12dd99adbb07ec1e2be9
-accepted_work_batch_ci_run=29647121269
-work_batch=PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE
+accepted_work_batch_commit=031ea139e73ffeacb4a5b717a8051afc9b7d287c
+accepted_work_batch_ci_run=29766557136
+work_batch=PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH
 work_batch_status=NOT_STARTED
 work_batch_commit=NONE
 work_batch_ci_run=NOT_RUN
-next_action=IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE
-autocad_runtime=NOT_CONNECTED
+next_action=IMPLEMENT_PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH
+autocad_runtime=CONNECTED
 dwg_read=NOT_IMPLEMENTED
 dwg_write=NOT_IMPLEMENTED
 read_only=ENABLED
@@ -40,19 +40,24 @@ authority。其他文档只能解释或链接本文件，不得建立独立状�
 - PHASE_1_MAINTENANCE_DEPENDENCIES：`ACCEPTED / CI GREEN`（已接受 / CI 已通过）；最终 implementation
   candidate `ba69004657adaef217ed12dd99adbb07ec1e2be9` 的 exact-head CI run `29647121269` 中
   Governance、Python 3.12、.NET 8 全部成功；该插入式维护批次不代表 CAD 能力推进。
-- PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE：`NOT_STARTED`（未开始）；未产生 implementation commit，
+- PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE：`ACCEPTED / CI GREEN`（已接受 / CI 已通过）；最终 candidate
+  `031ea139e73ffeacb4a5b717a8051afc9b7d287c` 的 exact-head CI run `29766557136` 中 Governance、
+  Python 3.12、.NET 8 全部成功。认证 loopback Bridge 已在真实 AutoCAD 2025/2026 上完成 endpoints、
+  端口冲突、shutdown、restart/reconnect 与 doctor 验收；focused security scan 的原 P3 已关闭。
+- PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH：`NOT_STARTED`（未开始）；未产生 implementation commit，
   未运行该 batch 的 CI。
 
 ## 唯一下一动作
 
-`IMPLEMENT_PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE`：只允许建立 plugin 内 `127.0.0.1` HTTP、token、
-health/version/capabilities 与 start/stop、端口及退出清理生命周期；不允许 document API、图纸读取、
-DWG 修改、write/script tool 或下一 work batch 实现。执行细节见
+`IMPLEMENT_PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH`：只允许建立 application/document context queue、
+AutoCAD 主线程 dispatch、active document routing，以及 timeout/cancellation/heartbeat、modal/busy 的
+fail-closed 行为；不允许读取 document/DWG 内容、对象枚举、DWG 修改、write/script tool 或下一 work
+batch 实现。执行细节见
 [Phase 1 主计划](PHASE_1_AUTOCAD_CONNECTION_PLAN.md)。
 
 ## 固定安全事实
 
-- AutoCAD runtime：`NOT CONNECTED`（未连接）。
+- AutoCAD runtime：`CONNECTED`（已连接；仅限认证 loopback process-level endpoints）。
 - DWG read：`NOT IMPLEMENTED`（未实现）。
 - DWG write：`NOT IMPLEMENTED`（未实现）。
 - read-only：`ENABLED`（开启）。
@@ -60,5 +65,6 @@ DWG 修改、write/script tool 或下一 work batch 实现。执行细节见
 - allow script：`DISABLED`（关闭）。
 - HTTP binding：`LOOPBACK ONLY`（仅回环地址）。
 
-Phase 1.1 的 AutoCAD 2025 真实加载证据只证明 plugin bootstrap 边界；尚未建立 Python MCP →
-loopback Bridge → AutoCAD 连接，不代表 AutoCAD runtime 已连接，也不代表 DWG read/write 已实现。
+`CONNECTED` 只表示 Python backend 已通过认证 loopback HTTP 连接真实 AutoCAD 进程内 plugin 的
+process-level endpoints；不表示 active document 或图纸内容可读。DWG read/write 仍未实现，write/script
+能力仍保持关闭。

@@ -87,3 +87,25 @@
 - Closeout commit SHA 与 exact-head CI 在本文成文时尚不存在；完成后只在最终报告记录。固定安全事实
   保持不变：AutoCAD runtime `NOT_CONNECTED`、DWG read/write `NOT_IMPLEMENTED`、read-only
   `ENABLED`、write/script `DISABLED`、HTTP `LOOPBACK_ONLY`。
+
+## 2026-07-21 / CADMAX-PHASE1-2-LOOPBACK-BRIDGE-LIFECYCLE closeout
+
+- 认证 loopback production listener、机器本地 token、四个 process-level endpoints、plugin lifecycle、
+  Python backend/doctor 与 deterministic task-registry cleanup 已完成；未实现 document/DWG 内容读取、
+  DWG 修改、write/script 或 Phase 1.3。
+- 原 Codex Security P3 `loopback-completed-task-retention` 已修复并由同步成功/失败/取消、异步完成、
+  10,000 次 stress 与 shutdown race 回归闭合；focused scan
+  `2dcaeabb-6ed1-44ce-83b9-e4d71325b226` findings `0`，`P0=0 / P1=0`。
+- 初始 candidate `c89626475a35f513d63089e4c0ddd3bc25d9176e` 的 run `29764567086` 暴露
+  Windows runner file-owner 差异；最小修复后的最终 candidate
+  `031ea139e73ffeacb4a5b717a8051afc9b7d287c` 在 run `29766557136` 的 Governance、Python 3.12、
+  .NET 8 全绿。
+- 本地与 fresh fixture 全量验证通过；真实 AutoCAD 2025/2026 Bridge、端口冲突、shutdown、
+  restart/reconnect 与 bundle 精确卸载均完成，active task/process/listener 最终为 `0`。
+- 本次 docs-only closeout 接受 `PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE / ACCEPTED|CI_GREEN`，初始化
+  `PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH / NOT_STARTED`；唯一下一动作是
+  `IMPLEMENT_PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH`。
+- `autocad_runtime` 推进为 `CONNECTED`，仅表示认证 loopback process-level endpoints；DWG read/write
+  仍 `NOT_IMPLEMENTED`，read-only、write/script disabled 与 loopback-only 安全默认值不变。
+- Closeout commit SHA 与 exact-head CI 在本文成文时尚不存在；完成后只在最终报告记录，不创建第三个
+  纯 attestation commit。

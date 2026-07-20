@@ -176,6 +176,22 @@ listener、当前用户 `.bundle` 安装与 authority 推进。接受前必须�
 - 修复 candidate 使用 `fix(bridge): create token files with explicit owner`；本恢复记录提交时 exact SHA/run
   尚未产生，必须由后续 candidate exact-head CI GREEN 记录补齐后才允许 authority closeout。
 
+## Final candidate acceptance
+
+- 最终 candidate `031ea139e73ffeacb4a5b717a8051afc9b7d287c` 已 push，且当时
+  `HEAD == origin/dev`；exact-head CI run `29766557136` 为 `completed / success`。
+- Jobs：Python 3.12 `88434097097`、Governance `88434097105`、.NET 8 `88434097108` 全部
+  success；Windows runner 已真实覆盖创建时 owner/DACL 的 PowerShell safety 与 .NET fixture 回归。
+- 初始失败 candidate `c89626475a35f513d63089e4c0ddd3bc25d9176e`、run `29764567086` 及其 RCA
+  原样保留，不以最终绿色 run 覆盖失败历史。
+- Closeout 接受 `PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE / ACCEPTED|CI_GREEN`，初始化
+  `PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH / NOT_STARTED`，并将唯一下一动作推进到
+  `IMPLEMENT_PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH`；本任务不启动 Phase 1.3 实现。
+- `autocad_runtime=CONNECTED` 仅表示认证 loopback process-level endpoints 已连接真实 AutoCAD；
+  `dwg_read/dwg_write=NOT_IMPLEMENTED`、read-only enabled、write/script disabled、loopback-only 均保持。
+- 本 docs-only closeout 的 SHA 与 exact-head CI 在成文时不可自引用；完成后在最终交付中记录，不创建第三个
+  纯 attestation commit，也不以 candidate run 替代 closeout run。
+
 ## Known limitations
 
 - `autocad_runtime=CONNECTED` 在 closeout 后只表示 Python backend 通过认证 loopback HTTP 连接到真实

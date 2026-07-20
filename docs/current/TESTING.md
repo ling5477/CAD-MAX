@@ -99,3 +99,26 @@
   authority regression/current authority、63 个 Markdown links、Ruff、mypy、Python `16/16`、doctor、
   safety `18/18`、locked .NET restore/build/test 全部成功；.NET build `0 warnings / 0 errors`，测试
   Contracts `1/1`、Plugin `15/15`、Bridge Core `8/8`。本条追加后仍需重跑验证覆盖最终待提交快照。
+
+## 2026-07-21 / Phase 1.2 authenticated loopback Bridge candidate acceptance
+
+- 初始 candidate `c89626475a35f513d63089e4c0ddd3bc25d9176e` 的 exact-head CI run
+  `29764567086` 中 Python 3.12 success，Governance 与 .NET 8 failure；失败历史保留。RCA 为 Windows
+  Server 2025 runner 的隐式 Administrators file owner，使 token script 与两个 .NET fixtures 按生产策略
+  返回 `TOKEN_FILE_INSECURE`。
+- 创建时显式 owner/protected DACL 的最小修复 candidate
+  `031ea139e73ffeacb4a5b717a8051afc9b7d287c` 已 push；exact-head CI run `29766557136` 为
+  `completed / success`。Jobs：Python 3.12 `88434097097`、Governance `88434097105`、.NET 8
+  `88434097108` 全部 success。
+- 最终工作树与独立 archived fresh fixture 的 `scripts/verify.ps1` 均 PASS：Ruff、format、mypy、
+  Python `38/38`、doctor、AutoCAD safety `24/24`、docs governance、locked restore、.NET
+  Contracts `3/3`、Plugin `50/50`、Bridge Core `13/13`；Release build `0 warnings / 0 errors`。
+- Token safety `10/10`、development loopback Bridge、端口释放均 PASS；NuGet direct/transitive
+  vulnerability query 成功且无已知漏洞。
+- Focused Codex Security scan `2dcaeabb-6ed1-44ce-83b9-e4d71325b226` 完成 `54/54` surfaces，
+  findings `0`；原 `loopback-completed-task-retention` 为 CLOSED，`P0=0 / P1=0 / P2=0 / P3=0`。
+- 真实 AutoCAD 2025/2026 均完成认证四 endpoint、doctor、shutdown port release、restart instanceId
+  rotation 与 Python capability cache reconnect；AutoCAD 2025 端口冲突 fail-closed/recovery PASS，最终
+  active task/process/listener count 均为 `0`。当前 dev bundle 已精确卸载，rollback bundle 保留。
+- 本条所在 docs-only closeout commit 在成文时尚未创建；其 exact-head CI 必须独立全绿，不得以
+  candidate run `29766557136` 替代。

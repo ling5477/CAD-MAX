@@ -123,3 +123,15 @@
   .NET `84/84`、AutoCAD safety `25/25` 与 docs governance 均 PASS。Authority 保持 Phase 1.3
   `NOT_STARTED`；下一步是 implementation commit/push 和 candidate exact-head CI，只有 CI GREEN 后才进行
   Phase 1.4 authority closeout。
+
+## 2026-07-22 / CADMAX-PHASE1-3-DOCUMENT-CONTEXT-DISPATCH closeout
+
+- Implementation candidate `8dc5d25630c681b1070b06443a80ca43a269c7bd` 与 exact-head CI run
+  `29934893298` 已接受；Governance、Python 3.12、.NET 8 全绿。
+- 本次 docs-only closeout 接受 `PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH / ACCEPTED|CI_GREEN`，初始化
+  `PHASE_1_4_READONLY_DOCUMENT_INSPECTION / NOT_STARTED`；唯一下一动作是
+  `IMPLEMENT_PHASE_1_4_READONLY_DOCUMENT_INSPECTION`，本任务不启动 Phase 1.4 实现。
+- `autocad_runtime=CONNECTED` 仅表示已接受的 authenticated loopback + document-context runtime；
+  `dwg_read/dwg_write=NOT_IMPLEMENTED`、read-only enabled、write/script disabled、loopback-only 全部保持。
+- Closeout commit SHA 与 exact-head CI 在本文成文时尚不存在；完成后只在最终报告记录，不创建第三个
+  纯 attestation commit。

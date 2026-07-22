@@ -139,3 +139,14 @@
 - Final `scripts/verify.ps1` PASS：Python `41/41`、.NET `84/84`、AutoCAD safety `25/25`、Release build
   `0 warning / 0 error`，Ruff/format/mypy/doctor/docs 全部通过。Implementation commit/push 与 exact-head CI
   在本条写入时尚未执行；不得以本地 PASS 代替 candidate CI。
+
+## 2026-07-22 / Phase 1.3 implementation candidate acceptance
+
+- Candidate `8dc5d25630c681b1070b06443a80ca43a269c7bd` 已 push，且当时
+  `HEAD == origin/dev`；exact-head CI run `29934893298` 为 `completed / success`。
+- Jobs：Python 3.12 `88973799136`、Governance `88973799176`、.NET 8 `88973799172` 全部 success。
+- Run 汇总曾在 3/3 jobs success 后短暂滞留 `in_progress`，普通/force cancel API 返回 HTTP 500；同 SHA
+  recovery run `29935780959` 被发起。原 push run 随后正常 success，recovery run 已提交 cancel，不用于
+  acceptance。
+- 本条所在 docs-only closeout commit 在成文时尚未创建；其 exact-head CI 必须独立全绿，不得以
+  candidate run `29934893298` 代替。

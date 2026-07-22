@@ -145,6 +145,23 @@ closeout 两轮 exact-head CI，且 `P0=0 / P1=0`。
   自身还需 exact-head CI GREEN。
 - 当前 authority 保持 Phase 1.3 `NOT_STARTED`，未用本机 PASS 或 security scan 提前推进。
 
+## Final candidate acceptance and closeout
+
+- Implementation candidate `8dc5d25630c681b1070b06443a80ca43a269c7bd` 已以
+  `feat(autocad): add document context dispatch` 提交并 push；当时 `HEAD == origin/dev`。
+- Exact-head CI run `29934893298` 为 `completed / success`；head SHA 精确匹配 candidate。Jobs：
+  Python 3.12 `88973799136`、Governance `88973799176`、.NET 8 `88973799172` 全部 success。
+- GitHub run 汇总曾短暂滞留 `in_progress`，其间 3/3 jobs 已全部 completed/success，普通/force cancel API
+  返回 HTTP 500；为恢复而发起同 SHA workflow_dispatch run `29935780959`。原 push run 随后正常封口为
+  success，已对重复 recovery run 提交 cancel，未用 recovery run 替代 candidate run。
+- Docs-only closeout 接受 `PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH / ACCEPTED|CI_GREEN`，初始化
+  `PHASE_1_4_READONLY_DOCUMENT_INSPECTION / NOT_STARTED`，唯一下一动作推进到
+  `IMPLEMENT_PHASE_1_4_READONLY_DOCUMENT_INSPECTION`。
+- `autocad_runtime=CONNECTED`、`dwg_read/dwg_write=NOT_IMPLEMENTED`、read-only enabled、write/script
+  disabled、loopback-only 保持；Phase 1.3 没有以 opaque routing 冒充 DWG read。
+- Closeout commit SHA 与 exact-head CI 在本段成文时尚不存在；其结果只在最终交付记录，不创建第三个
+  纯 attestation commit。
+
 ## Known limitations
 
 - AutoCAD dev bundle 未签名；每次新进程首次 demand-load 时 AutoCAD 会显示 publisher/security prompt。

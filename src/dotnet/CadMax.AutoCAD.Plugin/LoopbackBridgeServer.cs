@@ -17,11 +17,12 @@ public sealed record LoopbackBridgeLimits(
     int MaxRequestLineBytes = 2048,
     int MaxHeaderBytes = 8192,
     int MaxHeaderCount = 32,
+    int MaxRequestBodyBytes = 4096,
     int MaxResponseBytes = 65_536,
     int ReadTimeoutMs = 2000,
     int WriteTimeoutMs = 2000,
-    int MaxConcurrentConnections = 4,
-    int ListenBacklog = 16)
+    int MaxConcurrentConnections = 40,
+    int ListenBacklog = 64)
 {
     public void Validate()
     {
@@ -29,11 +30,12 @@ public sealed record LoopbackBridgeLimits(
             || MaxHeaderBytes is < 512 or > 8192
             || MaxHeaderBytes <= MaxRequestLineBytes
             || MaxHeaderCount is < 4 or > 32
+            || MaxRequestBodyBytes is < 512 or > 4096
             || MaxResponseBytes is < 1024 or > 65_536
             || ReadTimeoutMs is < 100 or > 2000
             || WriteTimeoutMs is < 100 or > 2000
-            || MaxConcurrentConnections is < 1 or > 4
-            || ListenBacklog is < 1 or > 16)
+            || MaxConcurrentConnections is < 1 or > 40
+            || ListenBacklog is < 1 or > 64)
         {
             throw new InvalidOperationException("BRIDGE_LIMITS_INVALID");
         }
@@ -77,6 +79,7 @@ public interface ILoopbackBridgeServerFactory
         LoopbackBridgeOptions options,
         BridgeTokenCredential credential,
         BridgeInstanceResponseService responseService,
+        DocumentContextDispatcher contextDispatcher,
         Action<string> listenerFault);
 }
 
@@ -86,8 +89,14 @@ public sealed class LoopbackBridgeServerFactory : ILoopbackBridgeServerFactory
         LoopbackBridgeOptions options,
         BridgeTokenCredential credential,
         BridgeInstanceResponseService responseService,
+        DocumentContextDispatcher contextDispatcher,
         Action<string> listenerFault) =>
-        new LoopbackBridgeServer(options, credential, responseService, listenerFault);
+        new LoopbackBridgeServer(
+            options,
+            credential,
+            responseService,
+            contextDispatcher,
+            listenerFault);
 }
 
 /// <summary>
@@ -102,6 +111,7 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
     private readonly LoopbackBridgeLimits limits;
     private readonly BridgeTokenCredential credential;
     private readonly BridgeInstanceResponseService responseService;
+    private readonly DocumentContextDispatcher contextDispatcher;
     private readonly Action<string> listenerFault;
     private readonly SemaphoreSlim connectionSlots;
     private readonly ConcurrentDictionary<long, TcpClient> activeClients = new();
@@ -121,6 +131,7 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
         LoopbackBridgeOptions options,
         BridgeTokenCredential credential,
         BridgeInstanceResponseService responseService,
+        DocumentContextDispatcher? contextDispatcher = null,
         Action<string>? listenerFault = null)
     {
         this.options = options ?? throw new ArgumentNullException(nameof(options));
@@ -129,6 +140,7 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
         this.credential = credential ?? throw new ArgumentNullException(nameof(credential));
         this.responseService = responseService
             ?? throw new ArgumentNullException(nameof(responseService));
+        this.contextDispatcher = contextDispatcher ?? new DocumentContextDispatcher();
         this.listenerFault = listenerFault ?? (_ => { });
         connectionSlots = new SemaphoreSlim(limits.MaxConcurrentConnections);
     }
@@ -411,28 +423,6 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
             return;
         }
 
-        if (!string.Equals(request.Method, "GET", StringComparison.Ordinal))
-        {
-            await WriteFailureAsync(
-                stream,
-                405,
-                CadStatus.MethodNotAllowed,
-                "CAD-MAX bridge permits GET only",
-                serverCancellation).ConfigureAwait(false);
-            return;
-        }
-
-        if (request.HasTransferEncoding || request.ContentLength != 0 || request.HasTrailingBytes)
-        {
-            await WriteFailureAsync(
-                stream,
-                400,
-                CadStatus.RequestBodyNotAllowed,
-                "CAD-MAX bridge request bodies are not allowed",
-                serverCancellation).ConfigureAwait(false);
-            return;
-        }
-
         if (request.Target.Contains('?'))
         {
             await WriteFailureAsync(
@@ -444,6 +434,15 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
             return;
         }
 
+        if (string.Equals(request.Target, BridgeRoutes.ContextProbe, StringComparison.Ordinal))
+        {
+            await HandleContextProbeAsync(
+                stream,
+                request,
+                serverCancellation).ConfigureAwait(false);
+            return;
+        }
+
         if (!BridgeRoutes.Production.Contains(request.Target))
         {
             await WriteFailureAsync(
@@ -451,6 +450,28 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
                 404,
                 CadStatus.RouteNotFound,
                 "CAD-MAX bridge route was not found",
+                serverCancellation).ConfigureAwait(false);
+            return;
+        }
+
+        if (!string.Equals(request.Method, "GET", StringComparison.Ordinal))
+        {
+            await WriteFailureAsync(
+                stream,
+                405,
+                CadStatus.MethodNotAllowed,
+                "CAD-MAX bridge permits GET for this route",
+                serverCancellation).ConfigureAwait(false);
+            return;
+        }
+
+        if (request.HasTransferEncoding || request.ContentLength != 0 || request.Body.Length != 0)
+        {
+            await WriteFailureAsync(
+                stream,
+                400,
+                CadStatus.RequestBodyNotAllowed,
+                "CAD-MAX bridge request bodies are not allowed",
                 serverCancellation).ConfigureAwait(false);
             return;
         }
@@ -473,12 +494,109 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
             serverCancellation).ConfigureAwait(false);
     }
 
+    private async Task HandleContextProbeAsync(
+        NetworkStream stream,
+        ParsedHttpRequest request,
+        CancellationToken serverCancellation)
+    {
+        if (!string.Equals(request.Method, "POST", StringComparison.Ordinal))
+        {
+            await WriteFailureAsync(
+                stream,
+                405,
+                CadStatus.MethodNotAllowed,
+                "CAD-MAX context probe requires POST",
+                serverCancellation).ConfigureAwait(false);
+            return;
+        }
+
+        if (request.HasTransferEncoding
+            || request.ContentLength <= 0
+            || request.ContentLength > limits.MaxRequestBodyBytes
+            || request.Body.Length != request.ContentLength
+            || request.ContentType is null
+            || !request.ContentType.StartsWith(
+                "application/json",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            await WriteFailureAsync(
+                stream,
+                400,
+                CadStatus.InvalidArgument,
+                "CAD-MAX context probe request body is invalid",
+                serverCancellation).ConfigureAwait(false);
+            return;
+        }
+
+        ContextProbeRequest probeRequest;
+        try
+        {
+            probeRequest = JsonSerializer.Deserialize<ContextProbeRequest>(
+                    request.Body,
+                    CadJson.Options)
+                ?? throw new JsonException("CONTEXT_REQUEST_MISSING");
+        }
+        catch (JsonException)
+        {
+            await WriteFailureAsync(
+                stream,
+                400,
+                CadStatus.InvalidArgument,
+                "CAD-MAX context probe request body is invalid",
+                serverCancellation).ConfigureAwait(false);
+            return;
+        }
+
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            serverCancellation);
+        var dispatchTask = contextDispatcher.EnqueueAsync(
+            probeRequest,
+            requestCancellation.Token);
+        var disconnectTask = WaitForDisconnectAsync(stream, requestCancellation.Token);
+        var completed = await Task.WhenAny(dispatchTask, disconnectTask).ConfigureAwait(false);
+        if (ReferenceEquals(completed, disconnectTask))
+        {
+            requestCancellation.Cancel();
+            _ = await dispatchTask.ConfigureAwait(false);
+            return;
+        }
+
+        requestCancellation.Cancel();
+        var envelope = await dispatchTask.ConfigureAwait(false);
+        await WriteEnvelopeAsync(
+            stream,
+            envelope.Success ? 200 : HttpStatusFor(envelope.Status),
+            envelope,
+            serverCancellation).ConfigureAwait(false);
+    }
+
+    private static async Task WaitForDisconnectAsync(
+        NetworkStream stream,
+        CancellationToken cancellationToken)
+    {
+        var buffer = new byte[1];
+        try
+        {
+            _ = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Response completion cancels the disconnect monitor.
+        }
+        catch (IOException)
+        {
+            // A reset peer is equivalent to cancellation.
+        }
+    }
+
     private async Task<ParsedRequestResult> ReadRequestAsync(
         NetworkStream stream,
         CancellationToken serverCancellation)
     {
-        var buffer = new byte[limits.MaxHeaderBytes + 1];
+        var buffer = new byte[limits.MaxHeaderBytes + limits.MaxRequestBodyBytes + 1];
         var total = 0;
+        var headerEnd = -1;
+        ParsedRequestResult? parsedHeaders = null;
         using var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(serverCancellation);
         readDeadline.CancelAfter(limits.ReadTimeoutMs);
         try
@@ -513,26 +631,72 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
                         "CAD-MAX bridge request target is too long");
                 }
 
-                var headerEnd = FindSequence(buffer.AsSpan(0, total), "\r\n\r\n"u8);
-                if (headerEnd >= 0)
+                if (headerEnd < 0)
                 {
-                    if (headerEnd + 4 > limits.MaxHeaderBytes)
+                    headerEnd = FindSequence(buffer.AsSpan(0, total), "\r\n\r\n"u8);
+                    if (headerEnd >= 0)
                     {
-                        return ParsedRequestResult.Invalid(
-                            431,
-                            CadStatus.HeadersTooLarge,
-                            "CAD-MAX bridge headers are too large");
-                    }
+                        if (headerEnd + 4 > limits.MaxHeaderBytes)
+                        {
+                            return ParsedRequestResult.Invalid(
+                                431,
+                                CadStatus.HeadersTooLarge,
+                                "CAD-MAX bridge headers are too large");
+                        }
 
-                    return ParseRequest(buffer.AsSpan(0, total), headerEnd);
+                        parsedHeaders = ParseRequestHeaders(
+                            buffer.AsSpan(0, headerEnd),
+                            headerEnd);
+                        if (parsedHeaders.ErrorStatus is not null)
+                        {
+                            return parsedHeaders;
+                        }
+
+                        var contentLength = parsedHeaders.Request!.ContentLength;
+                        if (BridgeRoutes.Production.Contains(parsedHeaders.Request.Target)
+                            && (contentLength != 0
+                                || parsedHeaders.Request.HasTransferEncoding))
+                        {
+                            return ParsedRequestResult.Invalid(
+                                400,
+                                CadStatus.RequestBodyNotAllowed,
+                                "CAD-MAX bridge request bodies are not allowed");
+                        }
+
+                        if (contentLength > limits.MaxRequestBodyBytes)
+                        {
+                            return ParsedRequestResult.Invalid(
+                                400,
+                                CadStatus.InvalidArgument,
+                                "CAD-MAX bridge request body is invalid");
+                        }
+                    }
                 }
 
-                if (total > limits.MaxHeaderBytes)
+                if (headerEnd < 0 && total > limits.MaxHeaderBytes)
                 {
                     return ParsedRequestResult.Invalid(
                         431,
                         CadStatus.HeadersTooLarge,
                         "CAD-MAX bridge headers are too large");
+                }
+
+                if (headerEnd >= 0 && parsedHeaders is not null)
+                {
+                    var bodyStart = headerEnd + 4;
+                    var expectedTotal = bodyStart + checked((int)parsedHeaders.Request!.ContentLength);
+                    if (total > expectedTotal)
+                    {
+                        return ParsedRequestResult.Invalid(
+                            400,
+                            CadStatus.InvalidArgument,
+                            "CAD-MAX bridge request body is invalid");
+                    }
+
+                    if (total == expectedTotal)
+                    {
+                        return parsedHeaders.WithBody(buffer.AsSpan(bodyStart, total - bodyStart));
+                    }
                 }
             }
         }
@@ -545,9 +709,8 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
         }
     }
 
-    private ParsedRequestResult ParseRequest(ReadOnlySpan<byte> bytes, int headerEnd)
+    private ParsedRequestResult ParseRequestHeaders(ReadOnlySpan<byte> headerBytes, int headerEnd)
     {
-        var headerBytes = bytes[..headerEnd];
         foreach (var value in headerBytes)
         {
             if (value >= 128 || value == 0 || (value < 32 && value is not (9 or 10 or 13)))
@@ -628,9 +791,10 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
             requestParts[2],
             headers.GetValueOrDefault("Authorization"),
             headers.GetValueOrDefault(SelfProbeHeaderName),
+            headers.GetValueOrDefault("Content-Type"),
             headers.ContainsKey("Transfer-Encoding"),
             contentLength,
-            bytes.Length > headerEnd + 4));
+            []));
     }
 
     private async Task<string?> ProbeRouteAsync(
@@ -851,8 +1015,22 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
         CadStatus.HeadersTooLarge => 431,
         CadStatus.RequestTargetTooLong => 414,
         CadStatus.RequestTimeout => 408,
-        CadStatus.ServerBusy or CadStatus.BridgeNotReady or CadStatus.BridgeStopping => 503,
-        CadStatus.InternalError => 500,
+        CadStatus.Timeout or CadStatus.Cancelled => 408,
+        CadStatus.NoActiveDocument
+            or CadStatus.DocumentNotActive
+            or CadStatus.DocumentDestroyed
+            or CadStatus.DocumentNotFound
+            or CadStatus.ApplicationModal
+            or CadStatus.DocumentBusy => 409,
+        CadStatus.InstanceMismatch => 409,
+        CadStatus.ServerBusy
+            or CadStatus.QueueFull
+            or CadStatus.DispatcherNotReady
+            or CadStatus.BridgeNotReady
+            or CadStatus.BridgeStopping => 503,
+        CadStatus.MainThreadDispatchFailed
+            or CadStatus.CommandContextFailed
+            or CadStatus.InternalError => 500,
         _ => 400,
     };
 
@@ -864,6 +1042,7 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
         404 => "Not Found",
         405 => "Method Not Allowed",
         408 => "Request Timeout",
+        409 => "Conflict",
         414 => "URI Too Long",
         431 => "Request Header Fields Too Large",
         500 => "Internal Server Error",
@@ -883,9 +1062,10 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
         string HttpVersion,
         string? Authorization,
         string? SelfProbeNonce,
+        string? ContentType,
         bool HasTransferEncoding,
         long ContentLength,
-        bool HasTrailingBytes);
+        byte[] Body);
 
     private sealed record ParsedRequestResult(
         ParsedHttpRequest? Request,
@@ -901,6 +1081,16 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
             CadStatus status,
             string safeMessage) =>
             new(null, httpStatus, status, safeMessage);
+
+        public ParsedRequestResult WithBody(ReadOnlySpan<byte> body)
+        {
+            if (Request is null || ErrorStatus is not null)
+            {
+                return this;
+            }
+
+            return this with { Request = Request with { Body = body.ToArray() } };
+        }
     }
 }
 

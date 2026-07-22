@@ -88,6 +88,7 @@ public sealed class PluginSerializationTests
             LoopbackBridgeOptions options,
             BridgeTokenCredential credential,
             CadMax.Bridge.Core.BridgeInstanceResponseService responseService,
+            DocumentContextDispatcher contextDispatcher,
             Action<string> listenerFault) => new TestServer();
     }
 

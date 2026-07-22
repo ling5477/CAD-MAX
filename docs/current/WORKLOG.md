@@ -109,3 +109,17 @@
   仍 `NOT_IMPLEMENTED`，read-only、write/script disabled 与 loopback-only 安全默认值不变。
 - Closeout commit SHA 与 exact-head CI 在本文成文时尚不存在；完成后只在最终报告记录，不创建第三个
   纯 attestation commit。
+
+## 2026-07-22 / CADMAX-PHASE1-3-DOCUMENT-CONTEXT-DISPATCH pre-candidate
+
+- 已实现 SDK-free bounded FIFO dispatcher、one-in-flight/Idle budget、deadline/cancellation/backpressure、
+  SDK-bound AutoCAD event adapter 与 official document command-context、opaque active-document routing、
+  唯一 `/v1/context/probe`、dynamic context heartbeat/capabilities 和 Python `context-doctor`。
+- 未读取 Document title/path/content、Database、Transaction、DocumentLock、ObjectId、Handle；未实现或启用
+  DWG read/write、write/script、generic command/dispatch 或 Phase 1.4 drawing capability。
+- AutoCAD 2025/2026 真实矩阵全部完成；focused Python/.NET/PowerShell tests PASS；standard security scan
+  为 `P0=0 / P1=0 / P2=0 / P3=2`，两项本地 bearer trust-boundary limitation 已记录而未隐藏。
+- 当前为 `IMPLEMENTED / LOCALLY VERIFIED / UNCOMMITTED`；最终 `scripts/verify.ps1`、Python `41/41`、
+  .NET `84/84`、AutoCAD safety `25/25` 与 docs governance 均 PASS。Authority 保持 Phase 1.3
+  `NOT_STARTED`；下一步是 implementation commit/push 和 candidate exact-head CI，只有 CI GREEN 后才进行
+  Phase 1.4 authority closeout。

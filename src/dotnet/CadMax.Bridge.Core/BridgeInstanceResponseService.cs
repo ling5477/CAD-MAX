@@ -19,18 +19,29 @@ public sealed record BridgeInstanceMetadata(
     bool DevelopmentHost);
 
 /// <summary>
+/// Supplies one lock-free, Autodesk-free context snapshot for capabilities and heartbeat.
+/// </summary>
+public interface IBridgeContextStateProvider
+{
+    BridgeContextSnapshot GetSnapshot();
+}
+
+/// <summary>
 /// Produces the four canonical process-level endpoint envelopes for one process instance.
 /// The service is thread-safe and owns only immutable metadata and atomic counters.
 /// </summary>
 public sealed class BridgeInstanceResponseService
 {
-    private static readonly IReadOnlyDictionary<string, bool> CapabilityInventory =
+    private static readonly IReadOnlyDictionary<string, bool> BaseCapabilityInventory =
         new ReadOnlyDictionary<string, bool>(new Dictionary<string, bool>(StringComparer.Ordinal)
         {
             ["bridge.health"] = true,
             ["bridge.version"] = true,
             ["bridge.capabilities"] = true,
             ["bridge.heartbeat"] = true,
+            ["bridge.contextDispatch"] = false,
+            ["bridge.contextProbe"] = false,
+            ["documentContext.available"] = false,
             ["drawing.active_document"] = false,
             ["drawing.list_documents"] = false,
             ["drawing.units"] = false,
@@ -59,6 +70,7 @@ public sealed class BridgeInstanceResponseService
         });
 
     private readonly BridgeInstanceMetadata metadata;
+    private readonly IBridgeContextStateProvider? contextStateProvider;
     private readonly string instanceId = Guid.NewGuid().ToString("D");
     private readonly string capabilityRevisionSeed = Guid.NewGuid().ToString("N");
     private readonly long startedTimestamp = Stopwatch.GetTimestamp();
@@ -69,16 +81,26 @@ public sealed class BridgeInstanceResponseService
     /// <summary>Create one response service whose instance identity is never persisted.</summary>
     public BridgeInstanceResponseService(
         BridgeInstanceMetadata metadata,
-        BridgePluginState initialState = BridgePluginState.Starting)
+        BridgePluginState initialState = BridgePluginState.Starting,
+        IBridgeContextStateProvider? contextStateProvider = null)
     {
         this.metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
+        this.contextStateProvider = contextStateProvider;
         pluginState = (int)initialState;
     }
 
     public string InstanceId => instanceId;
 
-    public string CapabilityRevision =>
-        $"{capabilityRevisionSeed}-{Interlocked.Read(ref capabilityRevisionSequence):x16}";
+    public string CapabilityRevision
+    {
+        get
+        {
+            var contextRevision = GetContextSnapshot().Revision;
+            return $"{capabilityRevisionSeed}-" +
+                $"{Interlocked.Read(ref capabilityRevisionSequence):x16}-" +
+                $"{contextRevision:x16}";
+        }
+    }
 
     public BridgePluginState PluginState =>
         (BridgePluginState)Volatile.Read(ref pluginState);
@@ -181,8 +203,18 @@ public sealed class BridgeInstanceResponseService
     private CadResultEnvelope CreateCapabilities(
         string requestId,
         string traceId,
-        BridgePluginState state) =>
-        CadResultEnvelope.Ok(
+        BridgePluginState state)
+    {
+        var context = GetContextSnapshot();
+        var capabilities = new Dictionary<string, bool>(
+            BaseCapabilityInventory,
+            StringComparer.Ordinal)
+        {
+            ["bridge.contextDispatch"] = context.DispatcherReady,
+            ["bridge.contextProbe"] = context.DispatcherReady,
+            ["documentContext.available"] = context.DocumentContextAvailable,
+        };
+        return CadResultEnvelope.Ok(
             requestId,
             traceId,
             "CAD-MAX AutoCAD bridge capability inventory",
@@ -192,13 +224,16 @@ public sealed class BridgeInstanceResponseService
                 state,
                 IsAutoCADConnected(state),
                 metadata.DevelopmentHost,
-                CapabilityInventory));
+                new ReadOnlyDictionary<string, bool>(capabilities)));
+    }
 
     private CadResultEnvelope CreateHeartbeat(
         string requestId,
         string traceId,
-        BridgePluginState state) =>
-        CadResultEnvelope.Ok(
+        BridgePluginState state)
+    {
+        var context = GetContextSnapshot();
+        return CadResultEnvelope.Ok(
             requestId,
             traceId,
             "CAD-MAX AutoCAD bridge heartbeat",
@@ -210,7 +245,26 @@ public sealed class BridgeInstanceResponseService
                 state,
                 CapabilityRevision,
                 IsAutoCADConnected(state),
-                metadata.DevelopmentHost));
+                metadata.DevelopmentHost,
+                context.DispatcherState,
+                context.QueueDepth,
+                context.InFlightCount,
+                context.Modal,
+                context.HasActiveDocument,
+                context.LastDispatchStatus));
+    }
+
+    private BridgeContextSnapshot GetContextSnapshot()
+    {
+        try
+        {
+            return contextStateProvider?.GetSnapshot() ?? BridgeContextSnapshot.Unavailable;
+        }
+        catch (Exception)
+        {
+            return BridgeContextSnapshot.Unavailable;
+        }
+    }
 
     private bool IsAutoCADConnected(BridgePluginState state) =>
         !metadata.DevelopmentHost

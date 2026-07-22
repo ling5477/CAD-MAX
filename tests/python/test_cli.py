@@ -56,3 +56,28 @@ def test_bridge_doctor_success_exit_code_is_forwarded(
 
     report = json.loads(capsys.readouterr().out)  # type: ignore[attr-defined]
     assert report == {"connected": True, "schemaVersion": "1.0", "status": "OK"}
+
+
+def test_context_doctor_success_exit_code_is_forwarded(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: object,
+) -> None:
+    async def fake_context_doctor(
+        self: AutoCadBridgeBackend,
+    ) -> tuple[int, dict[str, object]]:
+        del self
+        return 0, {
+            "schemaVersion": "1.0",
+            "status": "OK",
+            "mainThreadVerified": True,
+        }
+
+    monkeypatch.setenv("CAD_MAX_BRIDGE_URL", "http://127.0.0.1:47770")
+    monkeypatch.setenv("CAD_MAX_BRIDGE_TOKEN_FILE", str(tmp_path / "token.json"))
+    monkeypatch.setattr(AutoCadBridgeBackend, "context_doctor", fake_context_doctor)
+
+    assert main(["context-doctor"]) == 0
+
+    report = json.loads(capsys.readouterr().out)  # type: ignore[attr-defined]
+    assert report["mainThreadVerified"] is True

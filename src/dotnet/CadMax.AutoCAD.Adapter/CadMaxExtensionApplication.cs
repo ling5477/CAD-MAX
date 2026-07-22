@@ -79,16 +79,36 @@ public sealed class CadMaxStatusCommands
 internal static class AdapterLifecycle
 {
     private static readonly PluginMetadata Metadata = PluginMetadata.CreateDefault();
+    private static readonly DocumentContextDispatcher ContextQueue = new();
     private static readonly PluginLifecycleController Controller = new(
         Metadata,
-        new BoundedJsonLineEvidenceWriter());
+        new BoundedJsonLineEvidenceWriter(),
+        contextDispatcher: ContextQueue);
+    private static readonly AutoCadDocumentContextAdapter ContextAdapter = new(ContextQueue);
     private static readonly int TargetAutoCADYear = ReadTargetAutoCADYear();
 
-    internal static bool Initialize() =>
-        Controller.Initialize(CreateRuntimeInfo(), Environment.ProcessId);
+    internal static bool Initialize()
+    {
+        if (!Controller.Initialize(CreateRuntimeInfo(), Environment.ProcessId))
+        {
+            return false;
+        }
 
-    internal static bool Terminate() =>
-        Controller.Terminate(Environment.ProcessId);
+        if (ContextAdapter.Initialize())
+        {
+            return true;
+        }
+
+        _ = Controller.Terminate(Environment.ProcessId);
+        return false;
+    }
+
+    internal static bool Terminate()
+    {
+        var contextStopped = ContextAdapter.Terminate();
+        var lifecycleStopped = Controller.Terminate(Environment.ProcessId);
+        return contextStopped && lifecycleStopped;
+    }
 
     internal static PluginStatus GetStatus() =>
         Controller.GetStatus();

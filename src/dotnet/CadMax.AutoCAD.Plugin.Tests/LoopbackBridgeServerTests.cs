@@ -136,7 +136,7 @@ public sealed class LoopbackBridgeServerTests
         Assert.True(BridgeTokenCredential.TryCreate(token, out var credential));
         using (var validCredential = credential
             ?? throw new InvalidOperationException("TEST_TOKEN_CREATION_FAILED"))
-        await using (var server = CreateServer(port, validCredential, out _))
+        await using (var server = CreateServer(port, validCredential, out _, out _))
         {
             Assert.Equal("PORT_IN_USE", server.TryStart());
             Assert.Equal(0, server.ActiveConnectionCount);
@@ -312,17 +312,88 @@ public sealed class LoopbackBridgeServerTests
         Assert.True(heartbeatTwo.HeartbeatSequence > heartbeatOne.HeartbeatSequence);
     }
 
+    [Fact]
+    public async Task ContextProbePostUsesBoundedDispatcherAndPreservesCorrelation()
+    {
+        await using var fixture = await ServerFixture.StartAsync();
+        var request = new ContextProbeRequest(
+            CadProtocol.SchemaVersion,
+            Guid.NewGuid().ToString("D"),
+            Guid.NewGuid().ToString("D"),
+            DateTimeOffset.UtcNow.AddSeconds(5),
+            fixture.Service.InstanceId,
+            ExpectedDocumentId: null);
+        var responseTask = fixture.SendJsonAsync(BridgeRoutes.ContextProbe, request);
+        Assert.True(SpinWait.SpinUntil(
+            () => fixture.Dispatcher.GetSnapshot().QueueDepth == 1,
+            TimeSpan.FromSeconds(1)));
+        Assert.Equal(
+            DocumentDispatchTakeResult.Started,
+            fixture.Dispatcher.TryTakeNext(out var item));
+        Assert.NotNull(item);
+        Assert.True(fixture.Dispatcher.Complete(
+            item!,
+            CadResultEnvelope.Ok(
+                request.RequestId,
+                request.TraceId,
+                "AutoCAD document context dispatch completed",
+                new ContextProbeData(
+                    fixture.Service.InstanceId,
+                    item.DispatchId,
+                    MainThreadVerified: true,
+                    ExecutionContext: "DOCUMENT_COMMAND_CONTEXT",
+                    DocumentState: "ACTIVE",
+                    "doc_AAAAAAAAAAAAAAAAAAAAAA",
+                    IsQuiescent: true,
+                    QueueDelayMs: 0,
+                    ExecutionMs: 0))));
+
+        var response = await responseTask;
+
+        Assert.Equal((200, "OK"), (response.StatusCode, response.Status));
+        using var document = JsonDocument.Parse(response.Body);
+        Assert.Equal(request.RequestId, document.RootElement.GetProperty("requestId").GetString());
+        Assert.Equal(
+            "DOCUMENT_COMMAND_CONTEXT",
+            document.RootElement.GetProperty("data").GetProperty("executionContext").GetString());
+    }
+
+    [Fact]
+    public async Task ContextProbeRejectsUnknownFieldsAndWrongMethod()
+    {
+        await using var fixture = await ServerFixture.StartAsync();
+        var invalid = "{" +
+            $"\"schemaVersion\":\"1.0\",\"requestId\":\"{Guid.NewGuid():D}\"," +
+            $"\"traceId\":\"{Guid.NewGuid():D}\"," +
+            $"\"deadlineUtc\":\"{DateTimeOffset.UtcNow.AddSeconds(5):O}\"," +
+            $"\"expectedInstanceId\":\"{fixture.Service.InstanceId}\"," +
+            "\"expectedDocumentId\":null,\"unexpected\":true}";
+
+        var invalidResponse = await fixture.SendJsonAsync(BridgeRoutes.ContextProbe, invalid);
+        var wrongMethod = await fixture.SendAsync("GET", BridgeRoutes.ContextProbe, fixture.Token);
+
+        Assert.Equal((400, "INVALID_ARGUMENT"),
+            (invalidResponse.StatusCode, invalidResponse.Status));
+        Assert.Equal((405, "METHOD_NOT_ALLOWED"),
+            (wrongMethod.StatusCode, wrongMethod.Status));
+    }
+
     private static LoopbackBridgeServer CreateServer(
         int port,
         BridgeTokenCredential credential,
         out BridgeInstanceResponseService service,
+        out DocumentContextDispatcher dispatcher,
         LoopbackBridgeLimits? limits = null)
     {
         service = CreateResponseService(BridgePluginState.Listening);
+        dispatcher = new DocumentContextDispatcher();
+        dispatcher.ConfigureInstance(service.InstanceId);
+        dispatcher.MarkReady(activeDocumentExists: true, documentIsQuiescent: true);
         return new LoopbackBridgeServer(
             new LoopbackBridgeOptions(port, limits),
             credential,
-            service);
+            service,
+            dispatcher);
     }
 
     private static BridgeInstanceResponseService CreateResponseService(
@@ -417,19 +488,22 @@ public sealed class LoopbackBridgeServerTests
             string token,
             BridgeTokenCredential credential,
             LoopbackBridgeServer server,
-            BridgeInstanceResponseService service)
+            BridgeInstanceResponseService service,
+            DocumentContextDispatcher dispatcher)
         {
             Port = port;
             Token = token;
             this.credential = credential;
             Server = server;
             Service = service;
+            Dispatcher = dispatcher;
         }
 
         public int Port { get; }
         public string Token { get; }
         public LoopbackBridgeServer Server { get; }
         public BridgeInstanceResponseService Service { get; }
+        public DocumentContextDispatcher Dispatcher { get; }
 
         public static async Task<ServerFixture> StartAsync(LoopbackBridgeLimits? limits = null)
         {
@@ -438,15 +512,47 @@ public sealed class LoopbackBridgeServerTests
             Assert.True(BridgeTokenCredential.TryCreate(token, out var credential));
             var validCredential = credential
                 ?? throw new InvalidOperationException("TEST_TOKEN_CREATION_FAILED");
-            var server = CreateServer(port, validCredential, out var service, limits);
+            var server = CreateServer(
+                port,
+                validCredential,
+                out var service,
+                out var dispatcher,
+                limits);
             Assert.Null(server.TryStart());
             Assert.True(await server.RunAuthenticatedSelfProbeAsync(CancellationToken.None));
             service.SetPluginState(BridgePluginState.Ready);
-            return new ServerFixture(port, token, validCredential, server, service);
+            return new ServerFixture(
+                port,
+                token,
+                validCredential,
+                server,
+                service,
+                dispatcher);
         }
 
         public async Task<RawResponse> SendAsync(string method, string route, string? token) =>
             await SendRawAsync(method, route, token, string.Empty);
+
+        public async Task<RawResponse> SendJsonAsync(string route, object payload)
+        {
+            var json = payload is string text
+                ? text
+                : JsonSerializer.Serialize(payload, CadJson.Options);
+            using var client = new TcpClient(AddressFamily.InterNetwork);
+            await client.ConnectAsync(IPAddress.Loopback, Port);
+            await using var stream = client.GetStream();
+            var body = Encoding.UTF8.GetBytes(json);
+            var header = Encoding.ASCII.GetBytes(
+                $"POST {route} HTTP/1.1\r\n" +
+                $"Host: 127.0.0.1:{Port}\r\n" +
+                $"Authorization: Bearer {Token}\r\n" +
+                "Content-Type: application/json\r\n" +
+                $"Content-Length: {body.Length}\r\n" +
+                "Connection: close\r\n\r\n");
+            await stream.WriteAsync(header);
+            await stream.WriteAsync(body);
+            return Parse(await ReadToCloseAsync(stream));
+        }
 
         public async Task<RawResponse> SendRawAsync(
             string method,
@@ -471,6 +577,7 @@ public sealed class LoopbackBridgeServerTests
         public async ValueTask DisposeAsync()
         {
             await Server.DisposeAsync();
+            Dispatcher.Dispose();
             credential.Dispose();
         }
     }

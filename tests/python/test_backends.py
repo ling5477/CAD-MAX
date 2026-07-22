@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import secrets
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -74,12 +75,22 @@ def endpoint_data(
             "capabilityRevision": revision,
         }
     if path == "/v1/capabilities":
+        true_capabilities = {name: not development_host for name in EXPECTED_TRUE_CAPABILITIES}
+        true_capabilities.update(
+            {
+                "bridge.health": True,
+                "bridge.version": True,
+                "bridge.capabilities": True,
+                "bridge.heartbeat": True,
+            }
+        )
         return {
             **common,
             "capabilityRevision": revision,
             "pluginState": "READY",
             "capabilities": {
-                **{name: True for name in EXPECTED_TRUE_CAPABILITIES},
+                **true_capabilities,
+                "documentContext.available": not development_host,
                 **{name: False for name in REQUIRED_FALSE_CAPABILITIES},
             },
         }
@@ -91,6 +102,24 @@ def endpoint_data(
             "uptimeMs": 100,
             "pluginState": "READY",
             "capabilityRevision": revision,
+            "contextDispatcherState": "NOT_READY" if development_host else "READY",
+            "queueDepth": 0,
+            "inFlightCount": 0,
+            "modal": False,
+            "hasActiveDocument": not development_host,
+            "lastDispatchStatus": "NONE",
+        }
+    if path == "/v1/context/probe":
+        return {
+            "instanceId": str(instance_id),
+            "dispatchId": str(uuid4()),
+            "mainThreadVerified": True,
+            "executionContext": "DOCUMENT_COMMAND_CONTEXT",
+            "documentState": "ACTIVE",
+            "activeDocumentId": "doc_AAAAAAAAAAAAAAAAAAAAAA",
+            "isQuiescent": True,
+            "queueDelayMs": 1,
+            "executionMs": 1,
         }
     raise AssertionError("unexpected route")
 
@@ -139,17 +168,19 @@ def working_handler(
         assert request.headers["authorization"] == f"Bearer {token}"
         if request.url.path == "/v1/heartbeat":
             heartbeat += 1
-        return httpx.Response(
-            200,
-            json=envelope(
-                endpoint_data(
-                    request.url.path,
-                    instance_id=current_instance,
-                    heartbeat_sequence=max(1, heartbeat),
-                    development_host=development_host,
-                )
-            ),
+        response_envelope = envelope(
+            endpoint_data(
+                request.url.path,
+                instance_id=current_instance,
+                heartbeat_sequence=max(1, heartbeat),
+                development_host=development_host,
+            )
         )
+        if request.url.path == "/v1/context/probe":
+            request_payload = json.loads(request.content)
+            response_envelope["requestId"] = request_payload["requestId"]
+            response_envelope["traceId"] = request_payload["traceId"]
+        return httpx.Response(200, json=response_envelope)
 
     return handle
 
@@ -298,7 +329,9 @@ async def test_reconnect_invalidates_capability_cache(tmp_path: Path) -> None:
         transport=httpx.MockTransport(handle),
     )
     await backend.bridge_system("capabilities")
-    assert backend.capabilities() == sorted(EXPECTED_TRUE_CAPABILITIES)
+    assert backend.capabilities() == sorted(
+        EXPECTED_TRUE_CAPABILITIES | {"documentContext.available"}
+    )
 
     current_instance = second_instance
     await backend.bridge_system("health")
@@ -320,6 +353,66 @@ async def test_bridge_doctor_passes_complete_production_handshake(tmp_path: Path
     assert report["status"] == "OK"
     assert report["connectionState"] == "CONNECTED"
     assert all(report["checks"].values())
+
+
+async def test_context_probe_and_doctor_verify_stable_document_context(tmp_path: Path) -> None:
+    token_file, token = write_token_file(tmp_path)
+    instance_id = uuid4()
+    backend = AutoCadBridgeBackend(
+        "http://127.0.0.1:47770",
+        token_file,
+        transport=httpx.MockTransport(working_handler(token, instance_id=instance_id)),
+    )
+
+    probe = await backend.context_probe(
+        deadline=datetime.now(UTC) + timedelta(seconds=5),
+        expected_instance_id=instance_id,
+    )
+    exit_code, report = await backend.context_doctor()
+
+    assert probe.success is True
+    assert exit_code == 0
+    assert report["status"] == "OK"
+    assert report["checks"]["mainThreadVerified"] is True
+    assert report["checks"]["stableActiveDocumentId"] is True
+    assert report["documentContentAccess"] is False
+
+
+async def test_context_probe_does_not_retry_busy_and_clears_destroyed_id(
+    tmp_path: Path,
+) -> None:
+    token_file, _ = write_token_file(tmp_path)
+    instance_id = uuid4()
+    calls = 0
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        payload = json.loads(request.content)
+        status = "DOCUMENT_BUSY" if calls == 1 else "DOCUMENT_NOT_FOUND"
+        response = error_envelope(status)
+        response["requestId"] = payload["requestId"]
+        response["traceId"] = payload["traceId"]
+        return httpx.Response(409, json=response)
+
+    backend = AutoCadBridgeBackend(
+        "http://127.0.0.1:47770",
+        token_file,
+        transport=httpx.MockTransport(handle),
+    )
+    busy = await backend.context_probe(
+        deadline=datetime.now(UTC) + timedelta(seconds=5),
+        expected_instance_id=instance_id,
+    )
+    missing = await backend.context_probe(
+        deadline=datetime.now(UTC) + timedelta(seconds=5),
+        expected_instance_id=instance_id,
+        expected_document_id="doc_AAAAAAAAAAAAAAAAAAAAAA",
+    )
+
+    assert busy.status is Status.DOCUMENT_BUSY
+    assert missing.status is Status.DOCUMENT_NOT_FOUND
+    assert calls == 2
 
 
 async def test_bridge_doctor_rejects_inconsistent_instance_and_heartbeat(tmp_path: Path) -> None:

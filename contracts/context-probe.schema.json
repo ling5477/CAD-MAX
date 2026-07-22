@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cad-max.dev/contracts/context-probe.schema.json",
+  "title": "CAD-MAX Phase 1.3 context probe",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/data" }
+  ],
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "requestId", "traceId", "deadlineUtc",
+        "expectedInstanceId", "expectedDocumentId"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "requestId": { "type": "string", "format": "uuid" },
+        "traceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+        },
+        "deadlineUtc": { "type": "string", "format": "date-time" },
+        "expectedInstanceId": { "type": "string", "format": "uuid" },
+        "expectedDocumentId": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "pattern": "^doc_[A-Za-z0-9_-]{22}$" }
+          ]
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instanceId", "dispatchId", "mainThreadVerified", "executionContext",
+        "documentState", "activeDocumentId", "isQuiescent", "queueDelayMs",
+        "executionMs"
+      ],
+      "properties": {
+        "instanceId": { "type": "string", "format": "uuid" },
+        "dispatchId": { "type": "string", "format": "uuid" },
+        "mainThreadVerified": { "const": true },
+        "executionContext": { "const": "DOCUMENT_COMMAND_CONTEXT" },
+        "documentState": { "const": "ACTIVE" },
+        "activeDocumentId": {
+          "type": "string",
+          "pattern": "^doc_[A-Za-z0-9_-]{22}$"
+        },
+        "isQuiescent": { "const": true },
+        "queueDelayMs": { "type": "integer", "minimum": 0 },
+        "executionMs": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

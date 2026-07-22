@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import perf_counter
 from typing import Any, TypeVar, cast
@@ -21,6 +22,8 @@ from cad_max_mcp.models.bridge import (
     BridgeModel,
     BridgePluginState,
     BridgeVersionData,
+    ContextProbeData,
+    ContextProbeRequest,
 )
 from cad_max_mcp.models.envelope import ResultEnvelope, Status
 from cad_max_mcp.security.bridge_token import BridgeTokenError, load_bridge_token
@@ -39,6 +42,8 @@ EXPECTED_TRUE_CAPABILITIES = frozenset(
         "bridge.version",
         "bridge.capabilities",
         "bridge.heartbeat",
+        "bridge.contextDispatch",
+        "bridge.contextProbe",
     }
 )
 REQUIRED_FALSE_CAPABILITIES = frozenset(
@@ -98,6 +103,7 @@ class AutoCadBridgeBackend:
         self._instance_id: UUID | None = None
         self._capability_revision: str | None = None
         self._capability_cache: dict[str, bool] = {}
+        self._document_id: str | None = None
         self._connection_state = BridgeConnectionState.NOT_CONNECTED
 
     @property
@@ -150,6 +156,93 @@ class AutoCadBridgeBackend:
             data={"connectionState": self._connection_state.value},
         )
 
+    async def context_probe(
+        self,
+        *,
+        deadline: datetime,
+        expected_instance_id: UUID,
+        expected_document_id: str | None = None,
+    ) -> ResultEnvelope:
+        """Run the sole fixed document-context probe without retrying failures."""
+        try:
+            envelope, data = await self._request_context_typed(
+                deadline=deadline,
+                expected_instance_id=expected_instance_id,
+                expected_document_id=expected_document_id,
+            )
+        except ValidationError:
+            return _failure(
+                Status.INVALID_ARGUMENT,
+                "AutoCAD context probe request is invalid",
+            )
+        if envelope.success and data is not None:
+            self._document_id = data.active_document_id
+        elif envelope.status in {Status.DOCUMENT_DESTROYED, Status.DOCUMENT_NOT_FOUND}:
+            if expected_document_id is None or expected_document_id == self._document_id:
+                self._document_id = None
+        return envelope
+
+    async def context_doctor(self) -> tuple[int, dict[str, Any]]:
+        """Verify main-thread command context and stable active-document identity."""
+        health_envelope, health = await self._request_typed("health", BridgeHealthData)
+        self._classify_connection(health_envelope, health)
+        if not health_envelope.success or health is None:
+            self._classify_failure(health_envelope.status)
+            return 1, self._context_doctor_failure(health_envelope.status)
+
+        first_envelope, first = await self._request_context_typed(
+            deadline=datetime.now(UTC) + timedelta(seconds=5),
+            expected_instance_id=health.instance_id,
+            expected_document_id=None,
+        )
+        if not first_envelope.success or first is None:
+            return _context_exit_code(first_envelope.status), self._context_doctor_failure(
+                first_envelope.status
+            )
+
+        second_envelope, second = await self._request_context_typed(
+            deadline=datetime.now(UTC) + timedelta(seconds=5),
+            expected_instance_id=health.instance_id,
+            expected_document_id=first.active_document_id,
+        )
+        if not second_envelope.success or second is None:
+            return _context_exit_code(second_envelope.status), self._context_doctor_failure(
+                second_envelope.status
+            )
+
+        checks = {
+            "mainThreadVerified": first.main_thread_verified and second.main_thread_verified,
+            "documentCommandContext": (
+                first.execution_context == "DOCUMENT_COMMAND_CONTEXT"
+                and second.execution_context == "DOCUMENT_COMMAND_CONTEXT"
+            ),
+            "sameInstanceId": (first.instance_id == health.instance_id == second.instance_id),
+            "stableActiveDocumentId": (first.active_document_id == second.active_document_id),
+            "documentIdFormat": (
+                first.active_document_id.startswith("doc_") and len(first.active_document_id) == 26
+            ),
+            "quiescent": first.is_quiescent and second.is_quiescent,
+        }
+        success = all(checks.values())
+        if success:
+            self._document_id = first.active_document_id
+        report = {
+            "schemaVersion": "1.0",
+            "status": "OK" if success else "CONTEXT_VALIDATION_FAILED",
+            "connectionState": self._connection_state.value,
+            "connected": self._connection_state is BridgeConnectionState.CONNECTED,
+            "checks": checks,
+            "instanceId": str(health.instance_id),
+            "activeDocumentId": first.active_document_id if success else None,
+            "readOnly": True,
+            "allowWrite": False,
+            "allowScript": False,
+            "documentContentAccess": False,
+            "dwgRead": False,
+            "dwgWrite": False,
+        }
+        return (0 if success else 1), report
+
     def capabilities(self) -> list[str]:
         """Return only cached capabilities explicitly reported true by this instance."""
         return sorted(name for name, enabled in self._capability_cache.items() if enabled)
@@ -191,6 +284,7 @@ class AutoCadBridgeBackend:
             heartbeat_two.capability_revision,
         }
         true_capabilities = {name for name, enabled in capabilities.capabilities.items() if enabled}
+        fixed_true_capabilities = true_capabilities - {"documentContext.available"}
         false_capabilities_present = REQUIRED_FALSE_CAPABILITIES.issubset(
             {name for name, enabled in capabilities.capabilities.items() if not enabled}
         )
@@ -201,7 +295,7 @@ class AutoCadBridgeBackend:
                 heartbeat_two.heartbeat_sequence > heartbeat_one.heartbeat_sequence
             ),
             "capabilityHonesty": (
-                true_capabilities == EXPECTED_TRUE_CAPABILITIES and false_capabilities_present
+                fixed_true_capabilities == EXPECTED_TRUE_CAPABILITIES and false_capabilities_present
             ),
             "pluginReady": all(
                 state is BridgePluginState.READY
@@ -254,6 +348,53 @@ class AutoCadBridgeBackend:
         operation: str,
         model_type: type[BridgeData],
     ) -> tuple[ResultEnvelope, BridgeData | None]:
+        route, _ = ROUTES[operation]
+        return await self._request_route(route, model_type)
+
+    async def _request_context_typed(
+        self,
+        *,
+        deadline: datetime,
+        expected_instance_id: UUID,
+        expected_document_id: str | None,
+    ) -> tuple[ResultEnvelope, ContextProbeData | None]:
+        request = ContextProbeRequest(
+            request_id=uuid4(),
+            trace_id=uuid4(),
+            deadline_utc=deadline,
+            expected_instance_id=expected_instance_id,
+            expected_document_id=expected_document_id,
+        )
+        envelope, data = await self._request_route(
+            "/v1/context/probe",
+            ContextProbeData,
+            method="POST",
+            json_body=request.model_dump(mode="json", by_alias=True),
+        )
+        if envelope.request_id != request.request_id or envelope.trace_id != request.trace_id:
+            self._connection_state = BridgeConnectionState.INCOMPATIBLE
+            return (
+                _failure(
+                    Status.SCHEMA_MISMATCH,
+                    "AutoCAD bridge returned an incompatible response",
+                ),
+                None,
+            )
+        if data is not None:
+            self._observe_instance(data)
+        elif envelope.status in {Status.DOCUMENT_DESTROYED, Status.DOCUMENT_NOT_FOUND}:
+            if expected_document_id is None or expected_document_id == self._document_id:
+                self._document_id = None
+        return envelope, data
+
+    async def _request_route(
+        self,
+        route: str,
+        model_type: type[BridgeData],
+        *,
+        method: str = "GET",
+        json_body: dict[str, Any] | None = None,
+    ) -> tuple[ResultEnvelope, BridgeData | None]:
         started = perf_counter()
         try:
             token = load_bridge_token(self._token_file)
@@ -262,7 +403,6 @@ class AutoCadBridgeBackend:
             self._classify_failure(status)
             return _failure(status, _token_error_message(status), started), None
 
-        route, _ = ROUTES[operation]
         try:
             async with httpx.AsyncClient(
                 timeout=self._timeout,
@@ -270,9 +410,10 @@ class AutoCadBridgeBackend:
                 follow_redirects=False,
             ) as client:
                 async with client.stream(
-                    "GET",
+                    method,
                     f"{self._base_url}{route}",
                     headers={"Authorization": token.authorization_header},
+                    json=json_body,
                 ) as response:
                     content_length = response.headers.get("content-length")
                     if content_length is not None:
@@ -318,6 +459,7 @@ class AutoCadBridgeBackend:
         if self._instance_id is not None and self._instance_id != instance_id:
             self._capability_cache.clear()
             self._capability_revision = None
+            self._document_id = None
         self._instance_id = instance_id
 
         revision = (
@@ -393,6 +535,22 @@ class AutoCadBridgeBackend:
             "dwgWrite": False,
         }
 
+    def _context_doctor_failure(self, status: Status) -> dict[str, Any]:
+        return {
+            "schemaVersion": "1.0",
+            "status": status.value,
+            "connectionState": self._connection_state.value,
+            "connected": self._connection_state is BridgeConnectionState.CONNECTED,
+            "mainThreadVerified": False,
+            "documentCommandContext": False,
+            "readOnly": True,
+            "allowWrite": False,
+            "allowScript": False,
+            "documentContentAccess": False,
+            "dwgRead": False,
+            "dwgWrite": False,
+        }
+
 
 def _failure(status: Status, message: str, started: float | None = None) -> ResultEnvelope:
     return ResultEnvelope.failure(
@@ -428,3 +586,13 @@ def _probe_message(status: Status, connection_state: BridgeConnectionState) -> s
 
 def _elapsed_ms(started: float) -> int:
     return max(0, int((perf_counter() - started) * 1000))
+
+
+def _context_exit_code(status: Status) -> int:
+    return {
+        Status.NO_ACTIVE_DOCUMENT: 3,
+        Status.APPLICATION_MODAL: 4,
+        Status.DOCUMENT_BUSY: 5,
+        Status.TIMEOUT: 6,
+        Status.CANCELLED: 7,
+    }.get(status, 1)

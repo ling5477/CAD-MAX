@@ -33,6 +33,42 @@ public enum CadStatus
     /// <summary>The operation was cancelled or exceeded its timeout.</summary>
     Timeout,
 
+    /// <summary>The request was cancelled before the fixed probe completed.</summary>
+    Cancelled,
+
+    /// <summary>The AutoCAD document-context dispatcher has not completed initialization.</summary>
+    DispatcherNotReady,
+
+    /// <summary>The request targets a previous AutoCAD process instance.</summary>
+    InstanceMismatch,
+
+    /// <summary>AutoCAD currently has no active document.</summary>
+    NoActiveDocument,
+
+    /// <summary>The requested opaque document is not the active document.</summary>
+    DocumentNotActive,
+
+    /// <summary>The requested opaque document was destroyed during dispatch.</summary>
+    DocumentDestroyed,
+
+    /// <summary>The requested opaque document is not known to this process instance.</summary>
+    DocumentNotFound,
+
+    /// <summary>AutoCAD is inside a modal application state.</summary>
+    ApplicationModal,
+
+    /// <summary>The active document is not quiescent.</summary>
+    DocumentBusy,
+
+    /// <summary>The bounded document dispatch queue is full.</summary>
+    QueueFull,
+
+    /// <summary>The application/main-thread dispatch boundary failed.</summary>
+    MainThreadDispatchFailed,
+
+    /// <summary>The official document command-context callback failed.</summary>
+    CommandContextFailed,
+
     /// <summary>An internal failure was mapped to a sanitized response.</summary>
     InternalError,
 
@@ -112,6 +148,18 @@ public sealed class CadStatusJsonConverter : JsonConverter<CadStatus>
             "READ_ONLY" => CadStatus.ReadOnly,
             "NOT_IMPLEMENTED" => CadStatus.NotImplemented,
             "TIMEOUT" => CadStatus.Timeout,
+            "CANCELLED" => CadStatus.Cancelled,
+            "DISPATCHER_NOT_READY" => CadStatus.DispatcherNotReady,
+            "INSTANCE_MISMATCH" => CadStatus.InstanceMismatch,
+            "NO_ACTIVE_DOCUMENT" => CadStatus.NoActiveDocument,
+            "DOCUMENT_NOT_ACTIVE" => CadStatus.DocumentNotActive,
+            "DOCUMENT_DESTROYED" => CadStatus.DocumentDestroyed,
+            "DOCUMENT_NOT_FOUND" => CadStatus.DocumentNotFound,
+            "APPLICATION_MODAL" => CadStatus.ApplicationModal,
+            "DOCUMENT_BUSY" => CadStatus.DocumentBusy,
+            "QUEUE_FULL" => CadStatus.QueueFull,
+            "MAIN_THREAD_DISPATCH_FAILED" => CadStatus.MainThreadDispatchFailed,
+            "COMMAND_CONTEXT_FAILED" => CadStatus.CommandContextFailed,
             "INTERNAL_ERROR" => CadStatus.InternalError,
             "UNAUTHORIZED" => CadStatus.Unauthorized,
             "METHOD_NOT_ALLOWED" => CadStatus.MethodNotAllowed,
@@ -149,6 +197,18 @@ public sealed class CadStatusJsonConverter : JsonConverter<CadStatus>
             CadStatus.ReadOnly => "READ_ONLY",
             CadStatus.NotImplemented => "NOT_IMPLEMENTED",
             CadStatus.Timeout => "TIMEOUT",
+            CadStatus.Cancelled => "CANCELLED",
+            CadStatus.DispatcherNotReady => "DISPATCHER_NOT_READY",
+            CadStatus.InstanceMismatch => "INSTANCE_MISMATCH",
+            CadStatus.NoActiveDocument => "NO_ACTIVE_DOCUMENT",
+            CadStatus.DocumentNotActive => "DOCUMENT_NOT_ACTIVE",
+            CadStatus.DocumentDestroyed => "DOCUMENT_DESTROYED",
+            CadStatus.DocumentNotFound => "DOCUMENT_NOT_FOUND",
+            CadStatus.ApplicationModal => "APPLICATION_MODAL",
+            CadStatus.DocumentBusy => "DOCUMENT_BUSY",
+            CadStatus.QueueFull => "QUEUE_FULL",
+            CadStatus.MainThreadDispatchFailed => "MAIN_THREAD_DISPATCH_FAILED",
+            CadStatus.CommandContextFailed => "COMMAND_CONTEXT_FAILED",
             CadStatus.InternalError => "INTERNAL_ERROR",
             CadStatus.Unauthorized => "UNAUTHORIZED",
             CadStatus.MethodNotAllowed => "METHOD_NOT_ALLOWED",

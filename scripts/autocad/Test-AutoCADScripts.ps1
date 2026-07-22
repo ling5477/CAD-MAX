@@ -282,7 +282,8 @@ try {
             'New-BridgeToken.ps1',
             'Test-BridgeToken.ps1',
             'Test-LoopbackBridge.ps1',
-            'Test-RealAutoCADBridge.ps1')) {
+            'Test-RealAutoCADBridge.ps1',
+            'Test-DocumentContextDispatch.ps1')) {
         if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $requiredScript) -PathType Leaf)) {
             throw [InvalidOperationException]::new('BRIDGE_SCRIPT_MISSING')
         }
@@ -303,7 +304,10 @@ try {
     }
     $realBridgeScriptContent = Get-Content -LiteralPath (
         Join-Path $PSScriptRoot 'Test-RealAutoCADBridge.ps1') -Raw
-    if ($realBridgeScriptContent -match '(?i)(?:ComObject|GetActiveObject|Start-Process\s+.*acad)') {
+    $contextScriptContent = Get-Content -LiteralPath (
+        Join-Path $PSScriptRoot 'Test-DocumentContextDispatch.ps1') -Raw
+    if (($realBridgeScriptContent + $contextScriptContent) -match
+        '(?i)(?:ComObject|GetActiveObject|Start-Process\s+.*acad|SendCommand|SendStringToExecute)') {
         throw [InvalidOperationException]::new('REAL_BRIDGE_COM_OR_AUTOSTART_DETECTED')
     }
     $tokenTestOutput = @(& $powerShellExecutable `
@@ -355,7 +359,7 @@ if ($null -ne $testFailure) {
 
 [pscustomobject]@{
     result = 'PASS'
-    cases = 24
+    cases = 25
     fixtures = 'EMPTY_PLACEHOLDERS_IN_GIT_IGNORED_PATH'
     paths = 'REDACTED'
 } | ConvertTo-Json

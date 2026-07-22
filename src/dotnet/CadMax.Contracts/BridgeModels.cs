@@ -34,6 +34,7 @@ public static class BridgeRoutes
     public const string Version = "/v1/version";
     public const string Capabilities = "/v1/capabilities";
     public const string Heartbeat = "/v1/heartbeat";
+    public const string ContextProbe = "/v1/context/probe";
 
     /// <summary>The immutable production route allowlist.</summary>
     public static IReadOnlySet<string> Production { get; } = new HashSet<string>(
@@ -93,4 +94,10 @@ public sealed record BridgeHeartbeatData(
     string CapabilityRevision,
     [property: JsonPropertyName("autocadConnected")]
     bool AutoCADConnected,
-    bool DevelopmentHost);
+    bool DevelopmentHost,
+    string ContextDispatcherState,
+    int QueueDepth,
+    int InFlightCount,
+    bool Modal,
+    bool HasActiveDocument,
+    ContextDispatchLastStatus LastDispatchStatus);

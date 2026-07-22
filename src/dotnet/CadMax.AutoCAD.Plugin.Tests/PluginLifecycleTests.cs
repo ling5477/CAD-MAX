@@ -294,6 +294,7 @@ public sealed class PluginLifecycleTests
             LoopbackBridgeOptions options,
             BridgeTokenCredential credential,
             CadMax.Bridge.Core.BridgeInstanceResponseService responseService,
+            DocumentContextDispatcher contextDispatcher,
             Action<string> listenerFault)
         {
             CreateCount++;

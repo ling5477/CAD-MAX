@@ -373,6 +373,7 @@ public sealed class PluginLifecycleController
     private readonly IBridgeTokenSource tokenSource;
     private readonly ILoopbackBridgeServerFactory serverFactory;
     private readonly LoopbackBridgeOptions bridgeOptions;
+    private readonly DocumentContextDispatcher contextDispatcher;
     private readonly PluginLifecycleStateMachine stateMachine = new();
     private PluginMetadata? validatedMetadata;
     private PluginRuntimeInfo? runtimeInfo;
@@ -388,7 +389,8 @@ public sealed class PluginLifecycleController
         IPluginLifecycleEvidenceWriter evidenceWriter,
         IBridgeTokenSource? tokenSource = null,
         ILoopbackBridgeServerFactory? serverFactory = null,
-        LoopbackBridgeOptions? bridgeOptions = null)
+        LoopbackBridgeOptions? bridgeOptions = null,
+        DocumentContextDispatcher? contextDispatcher = null)
     {
         this.metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
         this.evidenceWriter = evidenceWriter
@@ -396,6 +398,7 @@ public sealed class PluginLifecycleController
         this.tokenSource = tokenSource ?? new FileBridgeTokenSource();
         this.serverFactory = serverFactory ?? new LoopbackBridgeServerFactory();
         this.bridgeOptions = bridgeOptions ?? new LoopbackBridgeOptions();
+        this.contextDispatcher = contextDispatcher ?? new DocumentContextDispatcher();
         this.bridgeOptions.Validate();
     }
 
@@ -482,11 +485,14 @@ public sealed class PluginLifecycleController
                         "net8.0-windows",
                         requestedRuntimeInfo.IsAutoCADHostProcess,
                         DevelopmentHost: false),
-                    BridgePluginState.Starting);
+                    BridgePluginState.Starting,
+                    contextDispatcher);
+                contextDispatcher.ConfigureInstance(responseService.InstanceId);
                 bridgeServer = serverFactory.Create(
                     bridgeOptions,
                     tokenCredential,
                     responseService,
+                    contextDispatcher,
                     OnListenerFault);
                 var startError = bridgeServer.TryStart();
                 if (startError is not null)
@@ -595,6 +601,7 @@ public sealed class PluginLifecycleController
                     processId: processId);
 
                 responseService?.SetPluginState(BridgePluginState.Stopping);
+                contextDispatcher.BeginStopping();
                 var drained = bridgeServer?.StopAsync(ShutdownDeadline)
                     .GetAwaiter()
                     .GetResult() ?? true;

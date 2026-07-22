@@ -122,3 +122,20 @@
   active task/process/listener count 均为 `0`。当前 dev bundle 已精确卸载，rollback bundle 保留。
 - 本条所在 docs-only closeout commit 在成文时尚未创建；其 exact-head CI 必须独立全绿，不得以
   candidate run `29766557136` 替代。
+
+## 2026-07-22 / Phase 1.3 document context dispatch pre-candidate validation
+
+- 工作区基线 `3d0f20b8c00b789968a44f129834de3122a15cf6`；authority 为 Phase 1.3
+  `NOT_STARTED`、next action `IMPLEMENT_PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH`，未提前推进状态。
+- Focused validation：Python `17/17`；.NET Contracts `5/5`、Plugin `66/66`、Bridge Core `13/13`，
+  合计 `84/84`；AutoCAD PowerShell safety `25/25`；`git diff --check` 全部 PASS。
+- 真实 AutoCAD 2025/2026 均完成 main-thread + official document command-context、stable/distinct opaque
+  routing、wrong-active、destroy、zero-document、modal、busy、timeout、disconnect cancellation、queue
+  saturation、shutdown/port release、restart instance rotation 与 old-document-ID invalidation；最终 process、
+  queue、in-flight、listener 均为 `0`。
+- Standard security scan `779c3ee1-52b5-41f6-a907-a54a31d7e75f`：review receipts `51/51`；
+  `P0=0 / P1=0 / P2=0 / P3=2`。两个 P3 为既有 bearer token ACL control-right 与 peer-identity 限制，
+  已有 write-up/PoC，并保留 read-only/loopback-only/write-script-disabled 限制。
+- Final `scripts/verify.ps1` PASS：Python `41/41`、.NET `84/84`、AutoCAD safety `25/25`、Release build
+  `0 warning / 0 error`，Ruff/format/mypy/doctor/docs 全部通过。Implementation commit/push 与 exact-head CI
+  在本条写入时尚未执行；不得以本地 PASS 代替 candidate CI。

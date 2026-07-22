@@ -27,6 +27,10 @@ def build_parser() -> argparse.ArgumentParser:
         "bridge-doctor",
         help="Validate the authenticated process-level AutoCAD bridge",
     )
+    subparsers.add_parser(
+        "context-doctor",
+        help="Validate AutoCAD main-thread document-context dispatch",
+    )
 
     serve = subparsers.add_parser("serve", help="Start the MCP server")
     serve.add_argument(
@@ -84,7 +88,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "doctor":
         return run_doctor(settings)
 
-    if args.command == "bridge-doctor":
+    if args.command in {"bridge-doctor", "context-doctor"}:
         backend = create_backend(settings)
         if not isinstance(backend, AutoCadBridgeBackend):
             print(
@@ -98,6 +102,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "allowWrite": False,
                         "allowScript": False,
                         "documentAccess": False,
+                        "mainThreadVerified": False,
                         "dwgRead": False,
                         "dwgWrite": False,
                     },
@@ -106,7 +111,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
             return 2
-        exit_code, report = asyncio.run(backend.bridge_doctor())
+        operation = (
+            backend.bridge_doctor() if args.command == "bridge-doctor" else backend.context_doctor()
+        )
+        exit_code, report = asyncio.run(operation)
         print(json.dumps(report, separators=(",", ":"), sort_keys=True))
         return exit_code
 

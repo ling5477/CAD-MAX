@@ -12,7 +12,7 @@ license = { file = "LICENSE" }
 authors = [{ name = "CAD-MAX contributors" }]
 dependencies = [
   "httpx>=0.28,<1",
-  "mcp[cli]>=1.27,<2",
+  "mcp[cli]>=1.27,<3",
   "pydantic>=2.11,<3",
   "pydantic-settings>=2.10,<3",
 ]

@@ -4,15 +4,15 @@
 authority_schema=2
 current_phase=PHASE_1
 phase_status=IN_PROGRESS|NOT_FROZEN
-accepted_work_batch=PHASE_1_4_READONLY_DOCUMENT_INSPECTION
+accepted_work_batch=PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION
 accepted_work_batch_status=ACCEPTED|CI_GREEN
-accepted_work_batch_commit=e62fded92df1064ffbd82b75cc910a568eb9fc7b
-accepted_work_batch_ci_run=30741291154
-work_batch=PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION
+accepted_work_batch_commit=3c5d739c1cec1585137ff1680753ce4ad182cfbc
+accepted_work_batch_ci_run=30756102363
+work_batch=PHASE_1_5_READONLY_OBJECT_INSPECTION
 work_batch_status=NOT_STARTED
 work_batch_commit=NONE
 work_batch_ci_run=NOT_RUN
-next_action=IMPLEMENT_PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION
+next_action=IMPLEMENT_PHASE_1_5_READONLY_OBJECT_INSPECTION
 autocad_runtime=CONNECTED
 dwg_read=IMPLEMENTED
 dwg_write=NOT_IMPLEMENTED
@@ -51,18 +51,22 @@ authority。其他文档只能解释或链接本文件，不得建立独立状�
   `e62fded92df1064ffbd82b75cc910a568eb9fc7b` 的 exact-head CI run `30741291154` 中 Governance、
   Python 3.12、.NET 8 全部成功；AutoCAD 2025/2026 真实只读 document inspection 矩阵均通过，
   DBMOD 与 DWG SHA-256 均未变化。
-- PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION：`NOT_STARTED`（未开始）；这是插入在
-  Phase 1.4 与 Phase 1.5 之间的高风险协议维护 batch，未产生 implementation commit，未运行该 batch 的 CI。
-- PHASE_1_5_READONLY_OBJECT_INSPECTION：等待 MCP maintenance 接受后恢复为唯一下一 work batch；当前未开始，
-  未产生 implementation commit，未运行该 batch 的 CI。
+- PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION：`ACCEPTED / CI GREEN`（已接受 / CI 已通过）；
+  最终 candidate `3c5d739c1cec1585137ff1680753ce4ad182cfbc` 的 exact-head CI run `30756102363` 中
+  Governance、Python 3.12、.NET 8 全部成功。该高风险维护已将对外 MCP server 迁移到
+  `2026-07-28` 无状态协议，同时保留 legacy `2025-11-25` fallback、认证 loopback、两个现有工具、
+  显式 instance/document handle 与 read-only document inspection 语义；它不推进任何新的 CAD 能力。
+  security review 发现的 direct Bridge null document selector 缺口已修复，P0/P1 均为 `0`；既有
+  Python→Bridge bearer server-identity P3-2 仍为 OPEN。
+- PHASE_1_5_READONLY_OBJECT_INSPECTION：`NOT_STARTED`（未开始）；这是唯一下一 work batch，未产生
+  implementation commit，未运行该 batch 的 CI。
 
 ## 唯一下一动作
 
-`IMPLEMENT_PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION`：只允许将 Python MCP SDK 升级到
-稳定 v2，将对外 MCP server 迁移到 `2026-07-28` 无状态协议，并以显式 instance/document handle 消除
-隐藏 MCP session 对业务正确性的依赖；必须兼容 SDK v2 官方支持的 legacy revision，保持两个现有工具、
-认证 loopback、read-only 与 Phase 1.4 document inspection 语义。不允许实现 Phase 1.5 object inspection、
-DWG 修改或 write/script。
+`IMPLEMENT_PHASE_1_5_READONLY_OBJECT_INSPECTION`：只允许按
+[PHASE_1_AUTOCAD_CONNECTION_PLAN.md](PHASE_1_AUTOCAD_CONNECTION_PLAN.md) 开始 Phase 1.5 的 bounded、
+read-only object inspection；必须继续使用显式 instance/document handle，保持认证 loopback、MCP 无状态、
+read-only 与已接受的 document inspection 语义。不允许实施 Phase 1.6+、DWG 修改或 write/script。
 
 ## 固定安全事实
 

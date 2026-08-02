@@ -77,3 +77,13 @@
 - Focused independent review：PASS，P0=`0`、P1=`0`、P2=`0`、P3=`0`。Windows resolves the console script beside `<venv>\\Scripts\\python.exe`; Linux/macOS resolves it beside `<venv>/bin/python`。test continues to spawn the real subprocess twice through official `stdio_client` and assert restart/discover/tools/list/call behavior；no test weakening。
 - Revalidation：focused restart test PASS；Ruff check/format PASS；`scripts/verify.ps1` PASS。Python `89/89`、Contracts `6/6`、Bridge Core `13/13`、AutoCAD Plugin `90/90`；build `0 warnings / 0 errors`；doctor confirms read-only/write/script/loopback defaults；docs governance and AutoCAD script safety checks PASS。
 - Next state：`REVIEW_ACCEPTED|READY_TO_COMMIT`。将以独立 fix commit 推送 `dev`，并只接受该 new exact HEAD 的 Governance、Python 3.12、.NET 8 all-success CI。
+
+## 2026-08-02 / Candidate exact-head CI accepted before closeout
+
+- Final candidate：`3c5d739c1cec1585137ff1680753ce4ad182cfbc`（`test(mcp): resolve stdio console script cross-platform`）已包含
+  platform-specific console-script resolution 的最小 CI repair。
+- Exact-head CI：run `30756102363`，Governance、Python 3.12、.NET 8 均为 `success`；该 SHA 与当时的
+  `origin/dev` 一致。此前 candidate `0ba282344013eda44268b307013f6f184d5cc6be` 的 Linux-only test-path
+  failure 保留为历史 RCA，不以重跑掩盖。
+- Closeout boundary：下一提交只将 authority 接受状态与唯一下一动作更新为 Phase 1.5；固定安全事实、既有 P3-2
+  limitation 和历史 `NOT_RUN` 记录均不重写。closeout commit 的 exact-head CI 结果将在最终交付中据实报告。

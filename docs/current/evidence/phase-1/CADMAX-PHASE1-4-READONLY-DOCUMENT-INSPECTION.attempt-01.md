@@ -129,3 +129,15 @@ attempt 的最新结论。所有值均为脱敏状态、布尔值或计数，不
 - AutoCAD 已按真实验收流程关闭，因此独立 `bridge-doctor`、`context-doctor`、`drawing-doctor`
   当前返回 `BACKEND_NOT_CONFIGURED`；对应 live checks 已由上文 2025/2026 full harness `PASS` 覆盖，
   本 continuation 未重新启动 AutoCAD 或访问 DWG。
+
+## Candidate CI attempt / 2026-08-02
+
+- Implementation candidate：`9f2a4c48b60857ca720e8a4bacbc64506b55b76e`；exact-head CI run：
+  `30741112632`。
+- Governance：`PASS`；.NET 8：`PASS`；Python 3.12：`FAIL`。唯一失败门禁为 Linux mypy，
+  Windows-only ctypes symbols 在 POSIX type stubs 中产生 `15` 个 `attr-defined` error；pytest 与 doctor
+  因前置失败未执行。
+- 最小修复只增加 Windows runtime symbol adapter，不改变 token schema、ACL/owner/identity validation、
+  handle lifetime、read bounds、错误码或 credential comparison。
+- CI-fix verification：Linux-target mypy `PASS`；Ruff/format `PASS`；token tests `5/5 PASS`；统一
+  `scripts/verify.ps1` 再次 `PASS`。后续 candidate commit 与 exact-head CI 另行记录。

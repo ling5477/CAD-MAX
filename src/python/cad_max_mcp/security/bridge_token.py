@@ -16,6 +16,22 @@ MAX_TOKEN_FILE_BYTES = 4096
 TOKEN_BYTES = 32
 
 
+def _windows_dll(name: str) -> Any:
+    """Resolve the Windows-only ctypes loader without exposing it to POSIX stubs."""
+    import ctypes
+
+    loader: Any = vars(ctypes)["WinDLL"]
+    return loader(name, use_last_error=True)
+
+
+def _windows_last_error() -> int:
+    """Read the Windows thread-local error through the runtime-only ctypes API."""
+    import ctypes
+
+    reader: Any = vars(ctypes)["get_last_error"]
+    return int(reader())
+
+
 class BridgeTokenError(ValueError):
     """A stable token configuration error that never contains the path or value."""
 
@@ -152,7 +168,7 @@ def _read_secure_windows_token_bytes(token_file: Path) -> bytes:
             ("file_index_low", wintypes.DWORD),
         ]
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32 = _windows_dll("kernel32")
     create_file = kernel32.CreateFileW
     create_file.argtypes = [
         wintypes.LPCWSTR,
@@ -196,7 +212,7 @@ def _read_secure_windows_token_bytes(token_file: Path) -> bytes:
         None,
     )
     if handle == invalid_handle_value:
-        error_code = ctypes.get_last_error()
+        error_code = _windows_last_error()
         if error_code in {2, 3}:
             raise FileNotFoundError(error_code, "token file is unavailable")
         raise OSError(error_code, "token file is unavailable")
@@ -210,7 +226,7 @@ def _read_secure_windows_token_bytes(token_file: Path) -> bytes:
         buffer = (ctypes.c_ubyte * size)()
         bytes_read = wintypes.DWORD()
         if not read_file(handle, buffer, size, ctypes.byref(bytes_read), None):
-            raise OSError(ctypes.get_last_error(), "token file is unavailable")
+            raise OSError(_windows_last_error(), "token file is unavailable")
         after = _windows_file_information(get_file_information, handle, ByHandleFileInformation)
         if bytes_read.value != size or _windows_identity(before) != _windows_identity(after):
             raise BridgeTokenError("TOKEN_FILE_INSECURE")
@@ -229,7 +245,7 @@ def _windows_file_information(
 
     information = information_type()
     if not get_file_information(handle, ctypes.byref(information)):
-        raise OSError(ctypes.get_last_error(), "token file is unavailable")
+        raise OSError(_windows_last_error(), "token file is unavailable")
     return information
 
 
@@ -270,8 +286,8 @@ def _assert_secure_windows_acl(handle: Any) -> None:
             ("acl_bytes_free", wintypes.DWORD),
         ]
 
-    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi32 = _windows_dll("advapi32")
+    kernel32 = _windows_dll("kernel32")
     get_security_info = advapi32.GetSecurityInfo
     get_security_info.argtypes = [
         wintypes.HANDLE,
@@ -324,7 +340,7 @@ def _assert_secure_windows_acl(handle: Any) -> None:
     dacl = wintypes.LPVOID()
     security_descriptor = wintypes.LPVOID()
     if not convert_string_sid("S-1-5-18", ctypes.byref(system)):
-        raise OSError(ctypes.get_last_error(), "token ACL is unavailable")
+        raise OSError(_windows_last_error(), "token ACL is unavailable")
     try:
         owner_security_information = 0x00000001
         dacl_security_information = 0x00000004
@@ -422,8 +438,8 @@ def _current_windows_user_sid() -> Any:
     class TokenUser(ctypes.Structure):
         _fields_ = [("user", SidAndAttributes)]
 
-    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi32 = _windows_dll("advapi32")
+    kernel32 = _windows_dll("kernel32")
     open_process_token = advapi32.OpenProcessToken
     open_process_token.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
     open_process_token.restype = wintypes.BOOL
@@ -456,11 +472,11 @@ def _current_windows_user_sid() -> Any:
     token_user = 1
     required = wintypes.DWORD()
     if not open_process_token(get_current_process(), token_query, ctypes.byref(token)):
-        raise OSError(ctypes.get_last_error(), "current user is unavailable")
+        raise OSError(_windows_last_error(), "current user is unavailable")
     try:
         get_token_information(token, token_user, None, 0, ctypes.byref(required))
-        if ctypes.get_last_error() != 122 or required.value == 0:
-            raise OSError(ctypes.get_last_error(), "current user is unavailable")
+        if _windows_last_error() != 122 or required.value == 0:
+            raise OSError(_windows_last_error(), "current user is unavailable")
         buffer = ctypes.create_string_buffer(required.value)
         if not get_token_information(
             token,
@@ -469,20 +485,20 @@ def _current_windows_user_sid() -> Any:
             required.value,
             ctypes.byref(required),
         ):
-            raise OSError(ctypes.get_last_error(), "current user is unavailable")
+            raise OSError(_windows_last_error(), "current user is unavailable")
         user = ctypes.cast(buffer, ctypes.POINTER(TokenUser)).contents.user
         if not user.sid:
             raise BridgeTokenError("TOKEN_FILE_INSECURE")
         sid_as_text = wintypes.LPVOID()
         if not convert_sid_to_string(user.sid, ctypes.byref(sid_as_text)):
-            raise OSError(ctypes.get_last_error(), "current user is unavailable")
+            raise OSError(_windows_last_error(), "current user is unavailable")
         try:
             current_user = wintypes.LPVOID()
             if not convert_string_sid(
                 ctypes.wstring_at(sid_as_text),
                 ctypes.byref(current_user),
             ):
-                raise OSError(ctypes.get_last_error(), "current user is unavailable")
+                raise OSError(_windows_last_error(), "current user is unavailable")
             return current_user
         finally:
             local_free(sid_as_text)

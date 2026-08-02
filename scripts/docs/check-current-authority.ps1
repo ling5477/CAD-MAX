@@ -9,7 +9,8 @@ param(
     [string] $StatusPath = 'docs/current/STATUS.md',
     [string] $RoadmapPath = 'docs/current/ROADMAP.md',
     [string] $EvidenceRoot = '',
-    [string] $PreviousStatusPath = ''
+    [string] $PreviousStatusPath = '',
+    [string] $SourceRoot = ''
 )
 
 Set-StrictMode -Version Latest
@@ -302,6 +303,62 @@ if ($null -ne $schemaSpec -and $null -ne $authority) {
                         $key,
                         $expected,
                         $authority[$key]) 'SECURITY_DEFAULT_REGRESSION'
+                }
+            }
+        }
+
+        $sourceRequirements = Get-ObjectPropertyValue `
+            $contract `
+            'acceptedWorkBatchSourceRequirements'
+        if ($null -ne $sourceRequirements -and $acceptedIndex -ge 0) {
+            $resolvedSourceRoot = if ([string]::IsNullOrWhiteSpace($SourceRoot)) {
+                $repositoryRoot
+            }
+            else {
+                Resolve-RepositoryPath $SourceRoot
+            }
+            foreach ($batchRequirement in $sourceRequirements.PSObject.Properties) {
+                $requiredBatchIndex = [Array]::IndexOf(
+                    [object[]]$workBatches,
+                    [object]$batchRequirement.Name)
+                if ($requiredBatchIndex -lt 0) {
+                    Add-AuthorityError (
+                        "SOURCE_REQUIREMENT_BATCH_INVALID batch={0}" -f
+                        $batchRequirement.Name) 'CONTRACT_MISMATCH'
+                    continue
+                }
+                if ($acceptedIndex -lt $requiredBatchIndex) {
+                    continue
+                }
+
+                foreach ($requirement in @($batchRequirement.Value)) {
+                    $relativePath = [string]$requirement.path
+                    $sourcePath = Resolve-RepositoryPath (Join-Path $resolvedSourceRoot $relativePath)
+                    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+                        Add-AuthorityError (
+                            "SOURCE_REQUIREMENT_FILE_MISSING code={0} path={1}" -f
+                            $requirement.errorCode,
+                            $relativePath) 'CONTRACT_MISMATCH'
+                        continue
+                    }
+
+                    $sourceContent = Read-Utf8File $sourcePath
+                    $requiredPattern = Get-ObjectPropertyValue $requirement 'requiredPattern'
+                    if ($null -ne $requiredPattern -and
+                        $sourceContent -notmatch [string]$requiredPattern) {
+                        Add-AuthorityError (
+                            "SOURCE_REQUIREMENT_NOT_MET code={0} path={1}" -f
+                            $requirement.errorCode,
+                            $relativePath) 'CONTRACT_MISMATCH'
+                    }
+                    $forbiddenPattern = Get-ObjectPropertyValue $requirement 'forbiddenPattern'
+                    if ($null -ne $forbiddenPattern -and
+                        $sourceContent -match [string]$forbiddenPattern) {
+                        Add-AuthorityError (
+                            "SOURCE_REQUIREMENT_FORBIDDEN code={0} path={1}" -f
+                            $requirement.errorCode,
+                            $relativePath) 'CONTRACT_MISMATCH'
+                    }
                 }
             }
         }

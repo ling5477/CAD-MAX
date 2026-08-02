@@ -92,7 +92,9 @@ function New-Fixture {
         [Parameter(Mandatory)][string] $Name,
         [Parameter(Mandatory)][AllowEmptyString()][string] $StatusContent,
         [Parameter(Mandatory)][string] $RoadmapAction,
-        [switch] $InvalidEvidenceName
+        [switch] $InvalidEvidenceName,
+        [string] $McpDependency = 'mcp[cli]>=2,<3',
+        [string] $McpServerImport = 'from mcp.server import MCPServer'
     )
 
     $caseRoot = Join-Path $runRoot $Name
@@ -102,6 +104,11 @@ function New-Fixture {
     $roadmapPath = Join-Path $caseRoot 'ROADMAP.md'
     Write-Utf8File $statusPath $StatusContent
     Write-Utf8File $roadmapPath "# 当前路线`n`n唯一下一动作：``$RoadmapAction``。`n"
+    Write-Utf8File (Join-Path $caseRoot 'pyproject.toml') (
+        "[project]`ndependencies = [`n  `"$McpDependency`",`n]`n")
+    $serverSourceRoot = Join-Path $caseRoot 'src\python\cad_max_mcp'
+    New-Item -ItemType Directory -Force -Path $serverSourceRoot | Out-Null
+    Write-Utf8File (Join-Path $serverSourceRoot 'server.py') "$McpServerImport`n"
     Write-Utf8File (Join-Path $evidenceRoot 'README.md') (
         "# Fixture evidence`n`n此索引仅用于 authority checker regression，内容完整且不决定 current authority。`n")
     $attemptName = if ($InvalidEvidenceName) {
@@ -123,6 +130,7 @@ function New-Fixture {
         Status = $statusPath
         Roadmap = $roadmapPath
         Evidence = $evidenceRoot
+        SourceRoot = $caseRoot
     }
 }
 
@@ -136,7 +144,8 @@ function Invoke-AuthorityChecker {
         '-NoLogo', '-NoProfile', '-File', $checkerPath,
         '-StatusPath', $Fixture.Status,
         '-RoadmapPath', $Fixture.Roadmap,
-        '-EvidenceRoot', $Fixture.Evidence
+        '-EvidenceRoot', $Fixture.Evidence,
+        '-SourceRoot', $Fixture.SourceRoot
     )
     if (-not [string]::IsNullOrWhiteSpace($PreviousStatusPath)) {
         $arguments += @('-PreviousStatusPath', $PreviousStatusPath)
@@ -181,6 +190,7 @@ try {
         Status = Join-Path $repositoryRoot 'docs\current\STATUS.md'
         Roadmap = Join-Path $repositoryRoot 'docs\current\ROADMAP.md'
         Evidence = Join-Path $repositoryRoot 'docs\current\evidence\phase-1'
+        SourceRoot = $repositoryRoot
     }
     Assert-Positive 'current repository authority' $currentFixture
 
@@ -243,15 +253,29 @@ try {
         -AcceptedBatch 'PHASE_1_4_READONLY_DOCUMENT_INSPECTION' `
         -AcceptedCommit 'ffffffffffffffffffffffffffffffffffffffff' `
         -AcceptedRun '999' `
-        -WorkBatch 'PHASE_1_5_READONLY_OBJECT_INSPECTION' `
-        -NextAction 'IMPLEMENT_PHASE_1_5_READONLY_OBJECT_INSPECTION' `
+        -WorkBatch 'PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION' `
+        -NextAction 'IMPLEMENT_PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION' `
         -AutoCadRuntime 'CONNECTED' `
         -DwgRead 'IMPLEMENTED'
     $phase14Accepted = New-Fixture `
         -Name 'phase-1-4-accepted-positive' `
         -StatusContent $phase14AcceptedStatus `
+        -RoadmapAction 'IMPLEMENT_PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION'
+    Assert-Positive 'Phase 1.4 accepted starts MCP maintenance' $phase14Accepted
+
+    $mcpMaintenanceAcceptedStatus = New-Schema2Status `
+        -AcceptedBatch 'PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION' `
+        -AcceptedCommit '1111111111111111111111111111111111111111' `
+        -AcceptedRun '1001' `
+        -WorkBatch 'PHASE_1_5_READONLY_OBJECT_INSPECTION' `
+        -NextAction 'IMPLEMENT_PHASE_1_5_READONLY_OBJECT_INSPECTION' `
+        -AutoCadRuntime 'CONNECTED' `
+        -DwgRead 'IMPLEMENTED'
+    $mcpMaintenanceAccepted = New-Fixture `
+        -Name 'mcp-maintenance-accepted-positive' `
+        -StatusContent $mcpMaintenanceAcceptedStatus `
         -RoadmapAction 'IMPLEMENT_PHASE_1_5_READONLY_OBJECT_INSPECTION'
-    Assert-Positive 'Phase 1.4 accepted with controlled DWG read' $phase14Accepted
+    Assert-Positive 'MCP maintenance accepted returns to Phase 1.5' $mcpMaintenanceAccepted
 
     $earlyDwgReadStatus = New-Schema2Status `
         -AcceptedBatch 'PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH' `
@@ -271,15 +295,61 @@ try {
         'SAFETY_FACT_PREREQUISITE_MISSING key=dwg_read'
 
     $acceptedWithoutDwgRead = New-Fixture `
-        -Name 'phase-1-4-without-dwg-read-negative' `
+        -Name 'mcp-maintenance-without-dwg-read-negative' `
         -StatusContent $phase14AcceptedStatus.Replace(
             'dwg_read=IMPLEMENTED',
             'dwg_read=NOT_IMPLEMENTED') `
-        -RoadmapAction 'IMPLEMENT_PHASE_1_5_READONLY_OBJECT_INSPECTION'
+        -RoadmapAction 'IMPLEMENT_PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION'
     Assert-Negative `
-        'Phase 1.4 acceptance requires implemented DWG read' `
+        'MCP maintenance cannot disable accepted DWG read' `
         $acceptedWithoutDwgRead `
         'ACCEPTED_WORK_BATCH_SAFETY_FACT_MISMATCH.*key=dwg_read'
+
+    foreach ($case in @(
+        @{ Name = 'mcp-maintenance-allow-write'; From = 'allow_write=DISABLED'; To = 'allow_write=ENABLED'; Expected = 'SAFETY_FACT_CONTRADICTION key=allow_write' },
+        @{ Name = 'mcp-maintenance-allow-script'; From = 'allow_script=DISABLED'; To = 'allow_script=ENABLED'; Expected = 'SAFETY_FACT_CONTRADICTION key=allow_script' }
+    )) {
+        $fixture = New-Fixture `
+            -Name ($case.Name + '-negative') `
+            -StatusContent $phase14AcceptedStatus.Replace($case.From, $case.To) `
+            -RoadmapAction 'IMPLEMENT_PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION'
+        Assert-Negative `
+            "MCP maintenance rejects unsafe fact $($case.Name)" `
+            $fixture `
+            $case.Expected
+    }
+
+    $mcpMaintenanceLegacyDependency = New-Fixture `
+        -Name 'mcp-maintenance-legacy-dependency-negative' `
+        -StatusContent $mcpMaintenanceAcceptedStatus `
+        -RoadmapAction 'IMPLEMENT_PHASE_1_5_READONLY_OBJECT_INSPECTION' `
+        -McpDependency 'mcp[cli]>=1.27,<2'
+    Assert-Negative `
+        'accepted MCP maintenance requires mcp v2 dependency' `
+        $mcpMaintenanceLegacyDependency `
+        'MCP_V2_DEPENDENCY_REQUIRED'
+
+    $mcpMaintenanceFastMcp = New-Fixture `
+        -Name 'mcp-maintenance-fastmcp-negative' `
+        -StatusContent $mcpMaintenanceAcceptedStatus `
+        -RoadmapAction 'IMPLEMENT_PHASE_1_5_READONLY_OBJECT_INSPECTION' `
+        -McpServerImport 'from mcp.server.fastmcp import FastMCP'
+    Assert-Negative `
+        'accepted MCP maintenance forbids FastMCP import' `
+        $mcpMaintenanceFastMcp `
+        'FASTMCP_IMPORT_FORBIDDEN'
+
+    $skippedMcpMaintenanceStatus = $phase14AcceptedStatus.Replace(
+        'PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION',
+        'PHASE_1_5_READONLY_OBJECT_INSPECTION')
+    $skippedMcpMaintenance = New-Fixture `
+        -Name 'mcp-maintenance-skip-negative' `
+        -StatusContent $skippedMcpMaintenanceStatus `
+        -RoadmapAction 'IMPLEMENT_PHASE_1_5_READONLY_OBJECT_INSPECTION'
+    Assert-Negative `
+        'Phase 1.5 cannot skip MCP maintenance' `
+        $skippedMcpMaintenance `
+        'UNFINISHED_WORK_BATCH_ORDER_INVALID'
 
     $earlyConnectedStatus = New-Schema2Status `
         -AcceptedBatch 'PHASE_1_MAINTENANCE_DEPENDENCIES' `

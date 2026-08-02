@@ -1,5 +1,5 @@
 {
-  "contractSchema": "1.2.0",
+  "contractSchema": "1.3.0",
   "authoritySchemas": {
     "1": {
       "requiredKeys": [
@@ -55,6 +55,7 @@
         "PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE",
         "PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH",
         "PHASE_1_4_READONLY_DOCUMENT_INSPECTION",
+        "PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION",
         "PHASE_1_5_READONLY_OBJECT_INSPECTION",
         "PHASE_1_6_SELECTION_AND_ACCURACY",
         "PHASE_1_7_PREVIEW_EVIDENCE_GOLDEN_DWG",
@@ -116,7 +117,30 @@
       "allow_write": "DISABLED",
       "allow_script": "DISABLED",
       "http_binding": "LOOPBACK_ONLY"
+    },
+    "PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION": {
+      "autocad_runtime": "CONNECTED",
+      "dwg_read": "IMPLEMENTED",
+      "dwg_write": "NOT_IMPLEMENTED",
+      "read_only": "ENABLED",
+      "allow_write": "DISABLED",
+      "allow_script": "DISABLED",
+      "http_binding": "LOOPBACK_ONLY"
     }
+  },
+  "acceptedWorkBatchSourceRequirements": {
+    "PHASE_1_MAINTENANCE_MCP_2026_07_28_STATELESS_MIGRATION": [
+      {
+        "path": "pyproject.toml",
+        "requiredPattern": "(?m)^\\s*\"mcp\\[cli\\]>=2,<3\",\\s*$",
+        "errorCode": "MCP_V2_DEPENDENCY_REQUIRED"
+      },
+      {
+        "path": "src/python/cad_max_mcp/server.py",
+        "forbiddenPattern": "(?m)^\\s*from\\s+mcp\\.server\\.fastmcp\\s+import\\s+FastMCP\\s*$",
+        "errorCode": "FASTMCP_IMPORT_FORBIDDEN"
+      }
+    ]
   },
   "workBatchStatuses": [
     "NOT_STARTED",

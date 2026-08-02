@@ -90,7 +90,7 @@ function New-CadMaxBridgeTokenFile {
     }
 }
 
-function Assert-CadMaxBridgeTokenOwner {
+function Assert-CadMaxBridgeTokenAcl {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -106,9 +106,49 @@ function Assert-CadMaxBridgeTokenOwner {
         $null)
     $security = [IO.FileSystemAclExtensions]::GetAccessControl(
         [IO.FileInfo]::new($Path),
+        [Security.AccessControl.AccessControlSections]::Access -bor
         [Security.AccessControl.AccessControlSections]::Owner)
+    if (-not $security.AreAccessRulesProtected) {
+        throw [InvalidOperationException]::new('TOKEN_FILE_INSECURE')
+    }
     $owner = $security.GetOwner([Security.Principal.SecurityIdentifier])
-    if (-not $owner.Equals($currentUser) -and -not $owner.Equals($system)) {
+    if (-not $owner.Equals($currentUser)) {
+        throw [InvalidOperationException]::new('TOKEN_FILE_INSECURE')
+    }
+
+    $currentRead = $false
+    $currentWrite = $false
+    $systemRead = $false
+    $rules = $security.GetAccessRules(
+        $true,
+        $true,
+        [Security.Principal.SecurityIdentifier])
+    foreach ($rule in $rules) {
+        if ($rule.IsInherited -or
+            $rule.IdentityReference -isnot [Security.Principal.SecurityIdentifier] -or
+            $rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow) {
+            throw [InvalidOperationException]::new('TOKEN_FILE_INSECURE')
+        }
+
+        $identity = [Security.Principal.SecurityIdentifier]$rule.IdentityReference
+        $canRead = ($rule.FileSystemRights -band (
+                [Security.AccessControl.FileSystemRights]::ReadData -bor
+                [Security.AccessControl.FileSystemRights]::Read)) -ne 0
+        $canWrite = ($rule.FileSystemRights -band (
+                [Security.AccessControl.FileSystemRights]::WriteData -bor
+                [Security.AccessControl.FileSystemRights]::Write)) -ne 0
+        if ($identity.Equals($currentUser)) {
+            $currentRead = $currentRead -or $canRead
+            $currentWrite = $currentWrite -or $canWrite
+        }
+        elseif ($identity.Equals($system)) {
+            $systemRead = $systemRead -or $canRead
+        }
+        elseif ($rule.FileSystemRights -ne 0) {
+            throw [InvalidOperationException]::new('TOKEN_FILE_INSECURE')
+        }
+    }
+    if (-not ($currentRead -and $currentWrite -and $systemRead)) {
         throw [InvalidOperationException]::new('TOKEN_FILE_INSECURE')
     }
 }
@@ -140,7 +180,9 @@ try {
         throw [InvalidOperationException]::new('TOKEN_ALREADY_CONFIGURED')
     }
     if ($alreadyExists) {
-        Assert-CadMaxBridgeTokenOwner -Path $targetFile
+        # File.Replace can preserve the destination DACL. Rotation therefore admits only a
+        # fully secure target before replacing it, not merely a correctly owned file.
+        Assert-CadMaxBridgeTokenAcl -Path $targetFile
     }
 
     $tokenBytes = [byte[]]::new(32)
@@ -174,15 +216,17 @@ try {
         $backupFile = Join-Path $targetDirectory (
             ".bridge-token-$([Guid]::NewGuid().ToString('N')).bak")
         [IO.File]::Replace($temporaryFile, $targetFile, $backupFile, $true)
-        Remove-Item -LiteralPath $backupFile -Force
-        $backupFile = $null
     }
     else {
         [IO.File]::Move($temporaryFile, $targetFile)
     }
     $temporaryFile = $null
     Set-CadMaxBridgeTokenAcl -Path $targetFile
-    Assert-CadMaxBridgeTokenOwner -Path $targetFile
+    Assert-CadMaxBridgeTokenAcl -Path $targetFile
+    if ($null -ne $backupFile) {
+        Remove-Item -LiteralPath $backupFile -Force
+        $backupFile = $null
+    }
 
     $digest = [Security.Cryptography.SHA256]::HashData($tokenBytes)
     try {

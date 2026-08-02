@@ -69,6 +69,15 @@ public enum CadStatus
     /// <summary>The official document command-context callback failed.</summary>
     CommandContextFailed,
 
+    /// <summary>A bounded drawing inspection result exceeded its fixed collection limit.</summary>
+    ResultLimitExceeded,
+
+    /// <summary>AutoCAD returned non-finite, sentinel, or otherwise invalid drawing data.</summary>
+    AutocadDataInvalid,
+
+    /// <summary>A read-only AutoCAD Managed API operation failed.</summary>
+    AutocadApiError,
+
     /// <summary>An internal failure was mapped to a sanitized response.</summary>
     InternalError,
 
@@ -160,6 +169,9 @@ public sealed class CadStatusJsonConverter : JsonConverter<CadStatus>
             "QUEUE_FULL" => CadStatus.QueueFull,
             "MAIN_THREAD_DISPATCH_FAILED" => CadStatus.MainThreadDispatchFailed,
             "COMMAND_CONTEXT_FAILED" => CadStatus.CommandContextFailed,
+            "RESULT_LIMIT_EXCEEDED" => CadStatus.ResultLimitExceeded,
+            "AUTOCAD_DATA_INVALID" => CadStatus.AutocadDataInvalid,
+            "AUTOCAD_API_ERROR" => CadStatus.AutocadApiError,
             "INTERNAL_ERROR" => CadStatus.InternalError,
             "UNAUTHORIZED" => CadStatus.Unauthorized,
             "METHOD_NOT_ALLOWED" => CadStatus.MethodNotAllowed,
@@ -209,6 +221,9 @@ public sealed class CadStatusJsonConverter : JsonConverter<CadStatus>
             CadStatus.QueueFull => "QUEUE_FULL",
             CadStatus.MainThreadDispatchFailed => "MAIN_THREAD_DISPATCH_FAILED",
             CadStatus.CommandContextFailed => "COMMAND_CONTEXT_FAILED",
+            CadStatus.ResultLimitExceeded => "RESULT_LIMIT_EXCEEDED",
+            CadStatus.AutocadDataInvalid => "AUTOCAD_DATA_INVALID",
+            CadStatus.AutocadApiError => "AUTOCAD_API_ERROR",
             CadStatus.InternalError => "INTERNAL_ERROR",
             CadStatus.Unauthorized => "UNAUTHORIZED",
             CadStatus.MethodNotAllowed => "METHOD_NOT_ALLOWED",

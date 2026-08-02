@@ -15,6 +15,7 @@ from cad_max_mcp.backends import AutoCadBridgeBackend
 from cad_max_mcp.bridge import create_backend
 from cad_max_mcp.config import CadMaxSettings
 from cad_max_mcp.logging import configure_logging
+from cad_max_mcp.security.mcp_http_auth import McpHttpAuthError
 from cad_max_mcp.server import TransportName, create_server
 
 
@@ -30,6 +31,15 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "context-doctor",
         help="Validate AutoCAD main-thread document-context dispatch",
+    )
+    drawing_doctor = subparsers.add_parser(
+        "drawing-doctor",
+        help="Validate allowlisted read-only AutoCAD drawing inspection",
+    )
+    drawing_doctor.add_argument(
+        "--expected-active-document-name",
+        metavar="BASENAME",
+        help="Verify the active document against a safe basename without printing it",
     )
 
     serve = subparsers.add_parser("serve", help="Start the MCP server")
@@ -54,6 +64,7 @@ def run_doctor(settings: CadMaxSettings) -> int:
         "httpPath": settings.http_path,
         "bridgeConfigured": settings.bridge_url is not None,
         "bridgeTokenConfigured": settings.bridge_token_file is not None,
+        "mcpHttpCallerTokenConfigured": settings.mcp_http_token_file is not None,
         "readOnly": settings.read_only,
         "allowWrite": settings.allow_write,
         "allowScript": settings.allow_script,
@@ -88,7 +99,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "doctor":
         return run_doctor(settings)
 
-    if args.command in {"bridge-doctor", "context-doctor"}:
+    if args.command in {"bridge-doctor", "context-doctor", "drawing-doctor"}:
         backend = create_backend(settings)
         if not isinstance(backend, AutoCadBridgeBackend):
             print(
@@ -112,7 +123,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             return 2
         operation = (
-            backend.bridge_doctor() if args.command == "bridge-doctor" else backend.context_doctor()
+            backend.drawing_doctor(args.expected_active_document_name)
+            if args.command == "drawing-doctor"
+            else {
+                "bridge-doctor": backend.bridge_doctor,
+                "context-doctor": backend.context_doctor,
+            }[args.command]()
         )
         exit_code, report = asyncio.run(operation)
         print(json.dumps(report, separators=(",", ":"), sort_keys=True))
@@ -121,8 +137,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     configure_logging()
     transport: TransportName = args.transport
     backend = create_backend(settings)
-    server = create_server(settings, backend, transport)
-    server.run(transport=transport)
+    try:
+        server = create_server(settings, backend, transport)
+    except McpHttpAuthError as error:
+        print(
+            json.dumps(
+                {
+                    "schemaVersion": SCHEMA_VERSION,
+                    "serverName": SERVER_NAME,
+                    "status": error.error_code,
+                    "configurationValid": False,
+                    "message": "Streamable HTTP caller authentication is unavailable",
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
+        return 2
+    server.run()
     return 0
 
 

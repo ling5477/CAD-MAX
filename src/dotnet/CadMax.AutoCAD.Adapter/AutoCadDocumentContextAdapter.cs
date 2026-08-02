@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using Autodesk.AutoCAD.ApplicationServices;
+using Autodesk.AutoCAD.DatabaseServices;
+using Autodesk.AutoCAD.Geometry;
 using CadMax.AutoCAD.Plugin;
 using CadMax.Contracts;
 using AutoCADApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
@@ -142,6 +144,12 @@ internal sealed class AutoCadDocumentContextAdapter
                     return;
                 }
 
+                if (item.Scope == DocumentDispatchScope.Application)
+                {
+                    ExecuteApplicationInspection(item, activeDocuments, activeDocument);
+                    continue;
+                }
+
                 if (activeDocument is null)
                 {
                     _ = queue.Complete(item, Failure(item, CadStatus.NoActiveDocument));
@@ -211,22 +219,51 @@ internal sealed class AutoCadDocumentContextAdapter
                 return Task.CompletedTask;
             }
 
-            var result = CadResultEnvelope.Ok(
-                item.Request.RequestId,
-                item.Request.TraceId,
-                "AutoCAD document context dispatch completed",
-                new ContextProbeData(
-                    item.Request.ExpectedInstanceId,
-                    item.DispatchId,
-                    MainThreadVerified: true,
-                    ExecutionContext: "DOCUMENT_COMMAND_CONTEXT",
-                    DocumentState: "ACTIVE",
+            var result = item.DrawingRequest is null
+                ? CadResultEnvelope.Ok(
+                    item.Request.RequestId,
+                    item.Request.TraceId,
+                    "AutoCAD document context dispatch completed",
+                    new ContextProbeData(
+                        item.Request.ExpectedInstanceId,
+                        item.DispatchId,
+                        MainThreadVerified: true,
+                        ExecutionContext: "DOCUMENT_COMMAND_CONTEXT",
+                        DocumentState: "ACTIVE",
+                        resolution.Identity!,
+                        IsQuiescent: true,
+                        QueueDelayMs: ElapsedMilliseconds(item.EnqueuedTimestamp),
+                        ExecutionMs: ElapsedMilliseconds(executionStarted)),
+                    durationMs: ElapsedMilliseconds(item.EnqueuedTimestamp))
+                : ExecuteDocumentInspection(
+                    item,
+                    item.DrawingRequest,
+                    activeDocument,
                     resolution.Identity!,
-                    IsQuiescent: true,
-                    QueueDelayMs: ElapsedMilliseconds(item.EnqueuedTimestamp),
-                    ExecutionMs: ElapsedMilliseconds(executionStarted)),
-                durationMs: ElapsedMilliseconds(item.EnqueuedTimestamp));
+                    executionStarted);
             _ = queue.Complete(item, result);
+        }
+        catch (DrawingInspectionLimitException)
+        {
+            _ = queue.Complete(item, Failure(item, CadStatus.ResultLimitExceeded));
+        }
+        catch (DrawingInspectionDataException)
+        {
+            _ = queue.Complete(item, Failure(item, CadStatus.AutocadDataInvalid));
+        }
+        catch (OperationCanceledException)
+        {
+            _ = queue.Complete(
+                item,
+                Failure(
+                    item,
+                    item.Request.DeadlineUtc <= DateTimeOffset.UtcNow
+                        ? CadStatus.Timeout
+                        : CadStatus.Cancelled));
+        }
+        catch (Autodesk.AutoCAD.Runtime.Exception)
+        {
+            _ = queue.Complete(item, Failure(item, CadStatus.AutocadApiError));
         }
         catch (Exception)
         {
@@ -235,6 +272,366 @@ internal sealed class AutoCadDocumentContextAdapter
 
         return Task.CompletedTask;
     }
+
+    private void ExecuteApplicationInspection(
+        DocumentDispatchWorkItem item,
+        DocumentCollection activeDocuments,
+        Document? activeDocument)
+    {
+        var executionStarted = Stopwatch.GetTimestamp();
+        try
+        {
+            var request = item.DrawingRequest
+                ?? throw new InvalidOperationException("DRAWING_REQUEST_MISSING");
+            if (item.IsCancellationRequested || item.Request.DeadlineUtc <= DateTimeOffset.UtcNow)
+            {
+                _ = queue.Complete(
+                    item,
+                    Failure(
+                        item,
+                        item.IsCancellationRequested ? CadStatus.Cancelled : CadStatus.Timeout));
+                return;
+            }
+
+            if (Environment.CurrentManagedThreadId != mainThreadId)
+            {
+                _ = queue.Complete(item, Failure(item, CadStatus.MainThreadDispatchFailed));
+                return;
+            }
+
+            var activeId = activeDocument is null
+                ? null
+                : identities.GetOrCreate(activeDocument);
+            CadResultEnvelope result;
+            if (request.Operation == DrawingOperation.Status)
+            {
+                var documentCount = CountDocumentsBounded(activeDocuments);
+                result = CadResultEnvelope.Ok(
+                    request.RequestId,
+                    request.TraceId,
+                    "AutoCAD drawing status inspected",
+                    new DrawingStatusData(
+                        request.ExpectedInstanceId,
+                        item.DispatchId,
+                        request.Operation,
+                        MainThreadVerified: true,
+                        DrawingExecutionContext.ApplicationContext,
+                        activeId,
+                        QueueDelayMs: ElapsedMilliseconds(item.EnqueuedTimestamp),
+                        ExecutionMs: ElapsedMilliseconds(executionStarted),
+                        DrawingReadMode.ReadOnly,
+                        TransactionUsed: false,
+                        RuntimeState: "READY",
+                        DocumentState: activeDocument is null ? "NO_ACTIVE_DOCUMENT" : "ACTIVE",
+                        documentCount),
+                    durationMs: ElapsedMilliseconds(item.EnqueuedTimestamp));
+            }
+            else if (request.Operation == DrawingOperation.ListDocuments)
+            {
+                var projections = new List<DrawingDocumentData>();
+                foreach (Document document in activeDocuments)
+                {
+                    if (item.IsCancellationRequested)
+                    {
+                        _ = queue.Complete(item, Failure(item, CadStatus.Cancelled));
+                        return;
+                    }
+
+                    if (projections.Count == DrawingInspectionSafety.MaximumDocuments)
+                    {
+                        throw new DrawingInspectionLimitException();
+                    }
+
+                    var safeName = DrawingInspectionSafety.SanitizeDocumentName(
+                        document.Name,
+                        !document.IsNamedDrawing);
+                    projections.Add(new DrawingDocumentData(
+                        identities.GetOrCreate(document),
+                        safeName.Value,
+                        safeName.IsUntitled,
+                        ReferenceEquals(document, activeDocument),
+                        ReferenceEquals(document, activeDocument)
+                            && document.Editor.IsQuiescent));
+                }
+
+                var ordered = DrawingInspectionSafety.OrderDocuments(projections);
+                result = CadResultEnvelope.Ok(
+                    request.RequestId,
+                    request.TraceId,
+                    "AutoCAD document list inspected",
+                    new DocumentListData(
+                        request.ExpectedInstanceId,
+                        item.DispatchId,
+                        request.Operation,
+                        MainThreadVerified: true,
+                        DrawingExecutionContext.ApplicationContext,
+                        activeId,
+                        QueueDelayMs: ElapsedMilliseconds(item.EnqueuedTimestamp),
+                        ExecutionMs: ElapsedMilliseconds(executionStarted),
+                        DrawingReadMode.ReadOnly,
+                        TransactionUsed: false,
+                        ordered,
+                        ordered.Count),
+                    durationMs: ElapsedMilliseconds(item.EnqueuedTimestamp));
+            }
+            else
+            {
+                result = Failure(item, CadStatus.InvalidArgument);
+            }
+
+            _ = queue.Complete(item, result);
+        }
+        catch (DrawingInspectionLimitException)
+        {
+            _ = queue.Complete(item, Failure(item, CadStatus.ResultLimitExceeded));
+        }
+        catch (Autodesk.AutoCAD.Runtime.Exception)
+        {
+            _ = queue.Complete(item, Failure(item, CadStatus.AutocadApiError));
+        }
+        catch (Exception)
+        {
+            _ = queue.Complete(item, Failure(item, CadStatus.InternalError));
+        }
+    }
+
+    private static CadResultEnvelope ExecuteDocumentInspection(
+        DocumentDispatchWorkItem item,
+        DrawingInspectRequest request,
+        Document document,
+        string activeDocumentId,
+        long executionStarted)
+    {
+        object data = request.Operation switch
+        {
+            DrawingOperation.ActiveDocument => CreateActiveDocumentData(
+                item,
+                request,
+                document,
+                activeDocumentId,
+                executionStarted),
+            DrawingOperation.Units => CreateUnitsData(
+                item,
+                request,
+                document.Database,
+                activeDocumentId,
+                executionStarted),
+            DrawingOperation.Bounds => CreateBoundsData(
+                item,
+                request,
+                document.Database,
+                activeDocumentId,
+                executionStarted),
+            DrawingOperation.Layouts => CreateLayoutsData(
+                item,
+                request,
+                document.Database,
+                activeDocumentId,
+                executionStarted),
+            DrawingOperation.SystemMetadata => CreateSystemMetadataData(
+                item,
+                request,
+                document,
+                activeDocumentId,
+                executionStarted),
+            _ => throw new DrawingInspectionDataException(),
+        };
+        return CadResultEnvelope.Ok(
+            request.RequestId,
+            request.TraceId,
+            "AutoCAD drawing inspected read-only",
+            data,
+            durationMs: ElapsedMilliseconds(item.EnqueuedTimestamp));
+    }
+
+    private static ActiveDocumentData CreateActiveDocumentData(
+        DocumentDispatchWorkItem item,
+        DrawingInspectRequest request,
+        Document document,
+        string activeDocumentId,
+        long executionStarted)
+    {
+        var safeName = DrawingInspectionSafety.SanitizeDocumentName(
+            document.Name,
+            !document.IsNamedDrawing);
+        return new ActiveDocumentData(
+            request.ExpectedInstanceId,
+            item.DispatchId,
+            request.Operation,
+            MainThreadVerified: true,
+            DrawingExecutionContext.DocumentCommandContext,
+            activeDocumentId,
+            QueueDelayMs: ElapsedMilliseconds(item.EnqueuedTimestamp),
+            ExecutionMs: ElapsedMilliseconds(executionStarted),
+            DrawingReadMode.ReadOnly,
+            TransactionUsed: false,
+            DocumentId: activeDocumentId,
+            safeName.Value,
+            safeName.IsUntitled,
+            IsQuiescent: true,
+            DocumentState: "ACTIVE");
+    }
+
+    private static DrawingUnitsData CreateUnitsData(
+        DocumentDispatchWorkItem item,
+        DrawingInspectRequest request,
+        Database database,
+        string activeDocumentId,
+        long executionStarted)
+    {
+        var insertionUnits = DrawingInspectionSafety.MapInsertionUnits(database.Insunits.ToString());
+        return new DrawingUnitsData(
+            request.ExpectedInstanceId,
+            item.DispatchId,
+            request.Operation,
+            MainThreadVerified: true,
+            DrawingExecutionContext.DocumentCommandContext,
+            activeDocumentId,
+            QueueDelayMs: ElapsedMilliseconds(item.EnqueuedTimestamp),
+            ExecutionMs: ElapsedMilliseconds(executionStarted),
+            DrawingReadMode.ReadOnly,
+            TransactionUsed: false,
+            insertionUnits,
+            DrawingInspectionSafety.MapLinearFormat(database.Lunits),
+            DrawingInspectionSafety.ValidatePrecision(database.Luprec),
+            DrawingInspectionSafety.MapAngularFormat(database.Aunits),
+            DrawingInspectionSafety.ValidatePrecision(database.Auprec),
+            Unitless: insertionUnits == DrawingInsertionUnits.Unitless,
+            DrawingInspectionSafety.MillimetersPerDrawingUnit(insertionUnits));
+    }
+
+    private static DrawingBoundsData CreateBoundsData(
+        DocumentDispatchWorkItem item,
+        DrawingInspectRequest request,
+        Database database,
+        string activeDocumentId,
+        long executionStarted)
+    {
+        var projection = DrawingInspectionSafety.ProjectBounds(
+            ToPoint(database.Extmin),
+            ToPoint(database.Extmax));
+        return new DrawingBoundsData(
+            request.ExpectedInstanceId,
+            item.DispatchId,
+            request.Operation,
+            MainThreadVerified: true,
+            DrawingExecutionContext.DocumentCommandContext,
+            activeDocumentId,
+            QueueDelayMs: ElapsedMilliseconds(item.EnqueuedTimestamp),
+            ExecutionMs: ElapsedMilliseconds(executionStarted),
+            DrawingReadMode.ReadOnly,
+            TransactionUsed: false,
+            projection.State,
+            DrawingBoundsSource.DatabaseExtents,
+            DrawingCoordinateSystem.Wcs,
+            projection.Minimum,
+            projection.Maximum,
+            projection.Size,
+            ExtentsMayBeStale: true);
+    }
+
+    private static DrawingLayoutsData CreateLayoutsData(
+        DocumentDispatchWorkItem item,
+        DrawingInspectRequest request,
+        Database database,
+        string activeDocumentId,
+        long executionStarted)
+    {
+        if (item.IsCancellationRequested)
+        {
+            throw new OperationCanceledException();
+        }
+
+        var layouts = new List<DrawingLayoutData>();
+        using (var transaction = database.TransactionManager.StartOpenCloseTransaction())
+        {
+            var dictionary = (DBDictionary)transaction.GetObject(
+                database.LayoutDictionaryId,
+                OpenMode.ForRead);
+            foreach (DBDictionaryEntry entry in dictionary)
+            {
+                if (item.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException();
+                }
+
+                if (layouts.Count == DrawingInspectionSafety.MaximumLayouts)
+                {
+                    throw new DrawingInspectionLimitException();
+                }
+
+                var layout = (Layout)transaction.GetObject(entry.Value, OpenMode.ForRead);
+                layouts.Add(new DrawingLayoutData(
+                    DrawingInspectionSafety.SanitizeLayoutName(layout.LayoutName),
+                    layout.ModelType,
+                    layout.TabOrder,
+                    layout.TabSelected));
+            }
+        }
+
+        var ordered = DrawingInspectionSafety.OrderLayouts(layouts);
+        return new DrawingLayoutsData(
+            request.ExpectedInstanceId,
+            item.DispatchId,
+            request.Operation,
+            MainThreadVerified: true,
+            DrawingExecutionContext.DocumentCommandContext,
+            activeDocumentId,
+            QueueDelayMs: ElapsedMilliseconds(item.EnqueuedTimestamp),
+            ExecutionMs: ElapsedMilliseconds(executionStarted),
+            DrawingReadMode.ReadOnly,
+            TransactionUsed: true,
+            ordered,
+            ordered.Count);
+    }
+
+    private static DrawingSystemMetadataData CreateSystemMetadataData(
+        DocumentDispatchWorkItem item,
+        DrawingInspectRequest request,
+        Document document,
+        string activeDocumentId,
+        long executionStarted)
+    {
+        var database = document.Database;
+        var currentLayoutName = DrawingInspectionSafety.SanitizeLayoutName(
+            LayoutManager.Current.CurrentLayout);
+        return new DrawingSystemMetadataData(
+            request.ExpectedInstanceId,
+            item.DispatchId,
+            request.Operation,
+            MainThreadVerified: true,
+            DrawingExecutionContext.DocumentCommandContext,
+            activeDocumentId,
+            QueueDelayMs: ElapsedMilliseconds(item.EnqueuedTimestamp),
+            ExecutionMs: ElapsedMilliseconds(executionStarted),
+            DrawingReadMode.ReadOnly,
+            TransactionUsed: false,
+            FileBacked: document.IsNamedDrawing,
+            DrawingInspectionSafety.MapFileFormatVersion(
+                database.OriginalFileVersion.ToString()),
+            database.TileMode,
+            database.TileMode
+                ? DrawingCurrentSpace.ModelSpace
+                : DrawingCurrentSpace.PaperSpace,
+            currentLayoutName);
+    }
+
+    private static int CountDocumentsBounded(DocumentCollection documents)
+    {
+        var count = 0;
+        foreach (Document _ in documents)
+        {
+            if (++count > DrawingInspectionSafety.MaximumDocuments)
+            {
+                throw new DrawingInspectionLimitException();
+            }
+        }
+
+        return count;
+    }
+
+    private static DrawingPointData ToPoint(Point3d value) =>
+        new(value.X, value.Y, value.Z);
 
     private void OnEnterModal(object? sender, EventArgs eventArgs)
     {
@@ -372,6 +769,9 @@ internal sealed class AutoCadDocumentContextAdapter
                 CadStatus.Timeout => "CAD-MAX context probe timed out",
                 CadStatus.MainThreadDispatchFailed => "AutoCAD main-thread dispatch failed",
                 CadStatus.CommandContextFailed => "AutoCAD document command-context dispatch failed",
+                CadStatus.ResultLimitExceeded => "CAD-MAX drawing inspection result limit was exceeded",
+                CadStatus.AutocadDataInvalid => "AutoCAD drawing data is invalid",
+                CadStatus.AutocadApiError => "AutoCAD read-only inspection failed",
                 _ => "CAD-MAX context probe failed",
             },
             durationMs: ElapsedMilliseconds(item.EnqueuedTimestamp));

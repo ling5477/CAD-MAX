@@ -560,14 +560,14 @@ function Assert-CadMaxDevBundle {
     if ([string]::IsNullOrWhiteSpace($moduleName) -or
         [IO.Path]::IsPathRooted($moduleName) -or
         $moduleName.Contains(':') -or
-        $moduleSegments -contains '..') {
+        $moduleSegments -contains '..' -or
+        $moduleSegments -contains '.' -or
+        $moduleSegments -contains '' -or
+        $moduleName -ne 'Contents/Windows/CadMax.AutoCAD.Adapter.dll') {
         throw [InvalidOperationException]::new('BUNDLE_MODULE_PATH_UNSAFE')
     }
 
     $relativeModule = $moduleName.Replace('/', [IO.Path]::DirectorySeparatorChar)
-    if ($relativeModule.StartsWith(".$([IO.Path]::DirectorySeparatorChar)")) {
-        $relativeModule = $relativeModule.Substring(2)
-    }
     $modulePath = Get-CadMaxCanonicalPath -Path (
         Join-Path $canonicalBundlePath $relativeModule)
     if (-not (Test-CadMaxPathWithin -Candidate $modulePath -Root $canonicalBundlePath) -or

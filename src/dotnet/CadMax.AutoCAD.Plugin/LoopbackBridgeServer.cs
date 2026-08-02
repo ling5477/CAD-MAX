@@ -443,6 +443,15 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
             return;
         }
 
+        if (string.Equals(request.Target, BridgeRoutes.DrawingInspect, StringComparison.Ordinal))
+        {
+            await HandleDrawingInspectAsync(
+                stream,
+                request,
+                serverCancellation).ConfigureAwait(false);
+            return;
+        }
+
         if (!BridgeRoutes.Production.Contains(request.Target))
         {
             await WriteFailureAsync(
@@ -551,6 +560,82 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
             serverCancellation);
         var dispatchTask = contextDispatcher.EnqueueAsync(
             probeRequest,
+            requestCancellation.Token);
+        var disconnectTask = WaitForDisconnectAsync(stream, requestCancellation.Token);
+        var completed = await Task.WhenAny(dispatchTask, disconnectTask).ConfigureAwait(false);
+        if (ReferenceEquals(completed, disconnectTask))
+        {
+            requestCancellation.Cancel();
+            _ = await dispatchTask.ConfigureAwait(false);
+            return;
+        }
+
+        requestCancellation.Cancel();
+        var envelope = await dispatchTask.ConfigureAwait(false);
+        await WriteEnvelopeAsync(
+            stream,
+            envelope.Success ? 200 : HttpStatusFor(envelope.Status),
+            envelope,
+            serverCancellation).ConfigureAwait(false);
+    }
+
+    private async Task HandleDrawingInspectAsync(
+        NetworkStream stream,
+        ParsedHttpRequest request,
+        CancellationToken serverCancellation)
+    {
+        if (!string.Equals(request.Method, "POST", StringComparison.Ordinal))
+        {
+            await WriteFailureAsync(
+                stream,
+                405,
+                CadStatus.MethodNotAllowed,
+                "CAD-MAX drawing inspection requires POST",
+                serverCancellation).ConfigureAwait(false);
+            return;
+        }
+
+        if (request.HasTransferEncoding
+            || request.ContentLength <= 0
+            || request.ContentLength > limits.MaxRequestBodyBytes
+            || request.Body.Length != request.ContentLength
+            || request.ContentType is null
+            || !request.ContentType.StartsWith(
+                "application/json",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            await WriteFailureAsync(
+                stream,
+                400,
+                CadStatus.InvalidArgument,
+                "CAD-MAX drawing inspection request body is invalid",
+                serverCancellation).ConfigureAwait(false);
+            return;
+        }
+
+        DrawingInspectRequest drawingRequest;
+        try
+        {
+            drawingRequest = JsonSerializer.Deserialize<DrawingInspectRequest>(
+                    request.Body,
+                    CadJson.Options)
+                ?? throw new JsonException("DRAWING_REQUEST_MISSING");
+        }
+        catch (JsonException)
+        {
+            await WriteFailureAsync(
+                stream,
+                400,
+                CadStatus.InvalidArgument,
+                "CAD-MAX drawing inspection request body is invalid",
+                serverCancellation).ConfigureAwait(false);
+            return;
+        }
+
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            serverCancellation);
+        var dispatchTask = contextDispatcher.EnqueueDrawingAsync(
+            drawingRequest,
             requestCancellation.Token);
         var disconnectTask = WaitForDisconnectAsync(stream, requestCancellation.Token);
         var completed = await Task.WhenAny(dispatchTask, disconnectTask).ConfigureAwait(false);
@@ -1022,6 +1107,8 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
             or CadStatus.DocumentNotFound
             or CadStatus.ApplicationModal
             or CadStatus.DocumentBusy => 409,
+        CadStatus.ResultLimitExceeded => 413,
+        CadStatus.AutocadDataInvalid => 422,
         CadStatus.InstanceMismatch => 409,
         CadStatus.ServerBusy
             or CadStatus.QueueFull
@@ -1030,6 +1117,7 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
             or CadStatus.BridgeStopping => 503,
         CadStatus.MainThreadDispatchFailed
             or CadStatus.CommandContextFailed
+            or CadStatus.AutocadApiError
             or CadStatus.InternalError => 500,
         _ => 400,
     };
@@ -1043,7 +1131,9 @@ public sealed class LoopbackBridgeServer : ILoopbackBridgeServer
         405 => "Method Not Allowed",
         408 => "Request Timeout",
         409 => "Conflict",
+        413 => "Content Too Large",
         414 => "URI Too Long",
+        422 => "Unprocessable Content",
         431 => "Request Header Fields Too Large",
         500 => "Internal Server Error",
         503 => "Service Unavailable",

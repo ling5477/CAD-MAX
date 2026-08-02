@@ -28,7 +28,7 @@ function Test-CadMaxBridgeTokenAcl {
         return $false
     }
     $owner = $security.GetOwner([Security.Principal.SecurityIdentifier])
-    if (-not $owner.Equals($currentUser) -and -not $owner.Equals($system)) {
+    if (-not $owner.Equals($currentUser)) {
         return $false
     }
 
@@ -60,14 +60,26 @@ function Test-CadMaxBridgeTokenAcl {
         elseif ($identity.Equals($system)) {
             $systemRead = $systemRead -or $canRead
         }
-        elseif ($canRead -or $canWrite) {
+        elseif ($rule.FileSystemRights -ne 0) {
             return $false
         }
     }
     return $currentRead -and $currentWrite -and $systemRead
 }
 
-function Assert-CadMaxBridgeTokenOwner {
+function Assert-CadMaxBridgeTokenAcl {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    if (-not (Test-CadMaxBridgeTokenAcl -Path $Path)) {
+        throw [InvalidOperationException]::new('TOKEN_FILE_INSECURE')
+    }
+}
+
+function Set-CadMaxBridgeTokenFixtureAcl {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -78,13 +90,23 @@ function Assert-CadMaxBridgeTokenOwner {
     if ($null -eq $currentUser) {
         throw [InvalidOperationException]::new('CURRENT_USER_SID_UNAVAILABLE')
     }
-    $security = [IO.FileSystemAclExtensions]::GetAccessControl(
+    $system = [Security.Principal.SecurityIdentifier]::new(
+        [Security.Principal.WellKnownSidType]::LocalSystemSid,
+        $null)
+    $security = [Security.AccessControl.FileSecurity]::new()
+    $security.SetOwner($currentUser)
+    $security.SetAccessRuleProtection($true, $false)
+    $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            $currentUser,
+            [Security.AccessControl.FileSystemRights]::FullControl,
+            [Security.AccessControl.AccessControlType]::Allow))
+    $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            $system,
+            [Security.AccessControl.FileSystemRights]::FullControl,
+            [Security.AccessControl.AccessControlType]::Allow))
+    [IO.FileSystemAclExtensions]::SetAccessControl(
         [IO.FileInfo]::new($Path),
-        [Security.AccessControl.AccessControlSections]::Owner)
-    $owner = $security.GetOwner([Security.Principal.SecurityIdentifier])
-    if (-not $owner.Equals($currentUser)) {
-        throw [InvalidOperationException]::new('TOKEN_OWNER_MISMATCH')
-    }
+        $security)
 }
 
 function Read-CadMaxBridgeTokenSummary {
@@ -174,7 +196,7 @@ try {
         throw [InvalidOperationException]::new('TOKEN_CREATE_TEST_FAILED')
     }
     $created = Read-CadMaxBridgeTokenSummary -Path $fixtureFile
-    Assert-CadMaxBridgeTokenOwner -Path $fixtureFile
+    Assert-CadMaxBridgeTokenAcl -Path $fixtureFile
     $createText = $createOutput -join "`n"
     if ($createText.Contains($created.Token) -or
         $createText -match '(?i)(?:[A-Z]:[\\/]|\\\\)') {
@@ -188,13 +210,37 @@ try {
         throw [InvalidOperationException]::new('TOKEN_OVERWRITE_GUARD_FAILED')
     }
 
+    $security = [IO.FileSystemAclExtensions]::GetAccessControl(
+        [IO.FileInfo]::new($fixtureFile))
+    $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            [Security.Principal.SecurityIdentifier]::new(
+                [Security.Principal.WellKnownSidType]::BuiltinUsersSid,
+                $null),
+            [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+            [Security.AccessControl.FileSystemRights]::TakeOwnership,
+            [Security.AccessControl.AccessControlType]::Allow))
+    [IO.FileSystemAclExtensions]::SetAccessControl(
+        [IO.FileInfo]::new($fixtureFile),
+        $security)
+    $insecureRotateOutput = @(& $powerShell -NoLogo -NoProfile -ExecutionPolicy Bypass `
+            -File $newTokenScript -TokenFilePath $fixtureFile -Rotate 2>&1)
+    if ($LASTEXITCODE -eq 0 -or
+        ($insecureRotateOutput -join "`n") -notmatch 'TOKEN_FILE_INSECURE') {
+        throw [InvalidOperationException]::new('TOKEN_INSECURE_ROTATION_NOT_REJECTED')
+    }
+    Set-CadMaxBridgeTokenFixtureAcl -Path $fixtureFile
+    $afterRejectedRotate = Read-CadMaxBridgeTokenSummary -Path $fixtureFile
+    if ($afterRejectedRotate.Token -ne $created.Token) {
+        throw [InvalidOperationException]::new('TOKEN_INSECURE_ROTATION_MUTATED')
+    }
+
     $rotateOutput = @(& $powerShell -NoLogo -NoProfile -ExecutionPolicy Bypass `
             -File $newTokenScript -TokenFilePath $fixtureFile -Rotate 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw [InvalidOperationException]::new('TOKEN_ROTATE_TEST_FAILED')
     }
     $rotated = Read-CadMaxBridgeTokenSummary -Path $fixtureFile
-    Assert-CadMaxBridgeTokenOwner -Path $fixtureFile
+    Assert-CadMaxBridgeTokenAcl -Path $fixtureFile
     $rotateText = $rotateOutput -join "`n"
     if ($created.Token -eq $rotated.Token -or
         $created.TokenId -eq $rotated.TokenId -or
@@ -220,7 +266,7 @@ try {
 
     [pscustomobject]@{
         result = 'PASS'
-        cases = 10
+        cases = 12
         aclState = 'SECURE_AND_BROAD_NEGATIVE_VERIFIED'
         token = 'REDACTED'
         paths = 'REDACTED'

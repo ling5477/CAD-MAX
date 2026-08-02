@@ -63,7 +63,6 @@
     }
   },
   "fixedSecurityFacts": {
-    "dwg_read": "NOT_IMPLEMENTED",
     "dwg_write": "NOT_IMPLEMENTED",
     "read_only": "ENABLED",
     "allow_write": "DISABLED",
@@ -79,12 +78,39 @@
       "minimumAcceptedWorkBatchByValue": {
         "CONNECTED": "PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE"
       }
+    },
+    "dwg_read": {
+      "allowedValues": [
+        "NOT_IMPLEMENTED",
+        "IMPLEMENTED"
+      ],
+      "minimumAcceptedWorkBatchByValue": {
+        "IMPLEMENTED": "PHASE_1_4_READONLY_DOCUMENT_INSPECTION"
+      }
     }
   },
   "acceptedWorkBatchSecurityFacts": {
     "PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE": {
       "autocad_runtime": "CONNECTED",
       "dwg_read": "NOT_IMPLEMENTED",
+      "dwg_write": "NOT_IMPLEMENTED",
+      "read_only": "ENABLED",
+      "allow_write": "DISABLED",
+      "allow_script": "DISABLED",
+      "http_binding": "LOOPBACK_ONLY"
+    },
+    "PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH": {
+      "autocad_runtime": "CONNECTED",
+      "dwg_read": "NOT_IMPLEMENTED",
+      "dwg_write": "NOT_IMPLEMENTED",
+      "read_only": "ENABLED",
+      "allow_write": "DISABLED",
+      "allow_script": "DISABLED",
+      "http_binding": "LOOPBACK_ONLY"
+    },
+    "PHASE_1_4_READONLY_DOCUMENT_INSPECTION": {
+      "autocad_runtime": "CONNECTED",
+      "dwg_read": "IMPLEMENTED",
       "dwg_write": "NOT_IMPLEMENTED",
       "read_only": "ENABLED",
       "allow_write": "DISABLED",

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import uuid4
 
 from cad_max_mcp.backends import NullCadBackend
 from cad_max_mcp.config import CadMaxSettings
 from cad_max_mcp.models import Status
-from cad_max_mcp.tools.system import cad_system_operation
+from cad_max_mcp.models.drawing import DrawingOperation
+from cad_max_mcp.tools.system import IMPLEMENTED_CAPABILITIES, cad_system_operation
 
 
 async def test_health_tool_reports_runtime_and_safe_defaults() -> None:
@@ -42,6 +44,17 @@ async def test_capabilities_distinguish_implemented_from_deferred() -> None:
 
     implemented = result.data["implemented"]
     not_implemented = result.data["notImplemented"]
-    assert "drawing.status" in implemented
+    expected_drawing = {f"drawing.{operation.value}" for operation in DrawingOperation}
+    assert expected_drawing.issubset(implemented)
+    assert expected_drawing.issubset(IMPLEMENTED_CAPABILITIES)
     assert "drawing.write" in not_implemented
     assert "script" in not_implemented
+
+
+def test_security_documentation_lists_the_full_drawing_operation_inventory() -> None:
+    security_document = (Path(__file__).resolve().parents[2] / "docs" / "SECURITY.md").read_text(
+        encoding="utf-8"
+    )
+
+    for operation in DrawingOperation:
+        assert operation.value in security_document

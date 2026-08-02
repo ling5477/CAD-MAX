@@ -20,6 +20,7 @@ def test_safe_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
         "CAD_MAX_ALLOWED_ROOTS",
         "CAD_MAX_BRIDGE_URL",
         "CAD_MAX_BRIDGE_TOKEN_FILE",
+        "CAD_MAX_MCP_HTTP_TOKEN_FILE",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -34,6 +35,7 @@ def test_safe_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.allowed_roots == []
     assert settings.bridge_url is None
     assert settings.bridge_token_file is None
+    assert settings.mcp_http_token_file is None
 
 
 def test_non_loopback_http_host_is_rejected() -> None:
@@ -65,6 +67,20 @@ def test_bridge_url_requires_explicit_http_origin(value: str) -> None:
 def test_bridge_token_file_must_be_absolute() -> None:
     with pytest.raises(ValidationError, match="absolute"):
         CadMaxSettings(bridge_token_file=Path("relative-token.json"))
+
+
+def test_mcp_http_token_file_must_be_absolute() -> None:
+    with pytest.raises(ValidationError, match="absolute"):
+        CadMaxSettings(mcp_http_token_file=Path("relative-token.json"))
+
+
+def test_mcp_http_token_file_must_differ_from_bridge_token_file(tmp_path: Path) -> None:
+    token_file = tmp_path / "shared-token.json"
+    with pytest.raises(ValidationError, match="differ"):
+        CadMaxSettings(
+            bridge_token_file=token_file,
+            mcp_http_token_file=token_file,
+        )
 
 
 def test_allowed_roots_must_be_absolute() -> None:

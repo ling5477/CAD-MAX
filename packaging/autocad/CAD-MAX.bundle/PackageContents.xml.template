@@ -23,7 +23,7 @@
       AppDescription="CAD-MAX read-only plugin lifecycle bootstrap"
       AppType=".Net"
       Version="{{APP_VERSION}}"
-      ModuleName="./Contents/Windows/CadMax.AutoCAD.Adapter.dll"
+      ModuleName="Contents/Windows/CadMax.AutoCAD.Adapter.dll"
       LoadReasons="LoadOnAutoCADStartup">
       <Commands GroupName="CADMAX">
         <Command Global="CADMAXPLUGINSTATUS" Local="CADMAXPLUGINSTATUS" />

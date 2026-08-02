@@ -197,11 +197,21 @@ try {
     [IO.File]::WriteAllText(
         (Join-Path $absoluteBundle 'PackageContents.xml'),
         $validManifest.Replace(
-            './Contents/Windows/CadMax.AutoCAD.Adapter.dll',
+            'Contents/Windows/CadMax.AutoCAD.Adapter.dll',
             'C:\unsafe\CadMax.AutoCAD.Adapter.dll'),
         [Text.UTF8Encoding]::new($false))
     Assert-ThrowsCode -ExpectedCode 'BUNDLE_MANIFEST_ABSOLUTE_PATH' -Action {
         Assert-CadMaxDevBundle -AutoCADYear 2025 -BundlePath $absoluteBundle | Out-Null
+    }
+
+    $dotSegmentBundle = Join-Path $bundleFixtureRoot 'dot-segment-module'
+    Write-TestBundleFixture `
+        -Path $dotSegmentBundle `
+        -Manifest $validManifest.Replace(
+            'Contents/Windows/CadMax.AutoCAD.Adapter.dll',
+            './Contents/Windows/CadMax.AutoCAD.Adapter.dll')
+    Assert-ThrowsCode -ExpectedCode 'BUNDLE_MODULE_PATH_UNSAFE' -Action {
+        Assert-CadMaxDevBundle -AutoCADYear 2025 -BundlePath $dotSegmentBundle | Out-Null
     }
 
     $binaryBundle = Join-Path $bundleFixtureRoot 'autodesk-binary'
@@ -283,7 +293,9 @@ try {
             'Test-BridgeToken.ps1',
             'Test-LoopbackBridge.ps1',
             'Test-RealAutoCADBridge.ps1',
-            'Test-DocumentContextDispatch.ps1')) {
+            'Test-DocumentContextDispatch.ps1',
+            'Test-ReadonlyDocumentInspection.ps1',
+            'Test-RealAutoCADDocumentInspection.ps1')) {
         if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $requiredScript) -PathType Leaf)) {
             throw [InvalidOperationException]::new('BRIDGE_SCRIPT_MISSING')
         }
@@ -295,6 +307,7 @@ try {
             'FileSystemAclExtensions]::Create',
             'SetOwner',
             'SetAccessRuleProtection',
+            'Assert-CadMaxBridgeTokenAcl',
             'File]::Replace',
             'TOKEN_ALREADY_CONFIGURED',
             'Rotate')) {
@@ -302,11 +315,80 @@ try {
             throw [InvalidOperationException]::new('BRIDGE_TOKEN_CONTROL_MISSING')
         }
     }
+    $readonlyInspectionScript = Join-Path $PSScriptRoot 'Test-ReadonlyDocumentInspection.ps1'
+    $readonlyInspectionScriptContent = Get-Content -LiteralPath $readonlyInspectionScript -Raw
+    foreach ($requiredReadonlyControl in @(
+            '-Recurse',
+            '--no-incremental',
+            'KNOWN_BAD_FIXTURE_REGRESSION_FAILED',
+            'OpenMode.ForWrite',
+            'READONLY_SOURCE_BOUNDARY_FAILED',
+            'Invoke-CadMaxSuppressedProcess',
+            'ProcessStartInfo',
+            'ArgumentList',
+            'RedirectStandardOutput',
+            'RedirectStandardError',
+            'CopyToAsync',
+            '[IO.Stream]::Null')) {
+        if (-not $readonlyInspectionScriptContent.Contains($requiredReadonlyControl)) {
+            throw [InvalidOperationException]::new('READONLY_INSPECTION_CONTROL_MISSING')
+        }
+    }
+    if ($readonlyInspectionScriptContent -match '(?m)^\s*&\s+(?:dotnet|\$uv)\b') {
+        throw [InvalidOperationException]::new('READONLY_INSPECTION_CHILD_OUTPUT_NOT_OWNED')
+    }
+    $realInspectionScript = Join-Path $PSScriptRoot 'Test-RealAutoCADDocumentInspection.ps1'
+    $realInspectionScriptContent = Get-Content -LiteralPath $realInspectionScript -Raw
+    foreach ($requiredRealInspectionControl in @(
+            '$($AutoCADYear):',
+            'Read-CadMaxDbmod',
+            '--expected-active-document-name',
+            'DBMOD_BEFORE_READS_DBMOD_AFTER_CLOSE_WITHOUT_SAVE_HASH',
+            'Get-FileHash',
+            'FIXTURE_NOT_FOUND',
+            'Test-BridgeToken.ps1',
+            '-MachineLocal',
+            'ProcessStartInfo',
+            'CAD_MAX_BRIDGE_URL',
+            'CAD_MAX_BRIDGE_TOKEN_FILE',
+            'RedirectStandardOutput',
+            'RedirectStandardError',
+            'TOKEN_OUTPUT_DISCLOSURE')) {
+        if (-not $realInspectionScriptContent.Contains($requiredRealInspectionControl)) {
+            throw [InvalidOperationException]::new('REAL_INSPECTION_CONTROL_MISSING')
+        }
+    }
+    foreach ($harnessPath in @($readonlyInspectionScript, $realInspectionScript)) {
+        $tokens = $null
+        $parseErrors = $null
+        [System.Management.Automation.Language.Parser]::ParseFile(
+            $harnessPath,
+            [ref]$tokens,
+            [ref]$parseErrors) | Out-Null
+        if ($null -eq $parseErrors -or $parseErrors.Count -ne 0) {
+            throw [InvalidOperationException]::new('PHASE14_HARNESS_PARSE_FAILED')
+        }
+    }
+    $missingFixtureOutput = @(& $powerShellExecutable `
+            -NoLogo `
+            -NoProfile `
+            -ExecutionPolicy Bypass `
+            -File $realInspectionScript `
+            -AutoCADYear 2025 `
+            -FixturePath (Join-Path $fixtureRoot 'missing-fixture.dwg') `
+            -ConfirmDisposableFixture `
+            -ConfirmActiveFixture 2>&1)
+    $missingFixtureText = $missingFixtureOutput -join "`n"
+    if ($LASTEXITCODE -eq 0 -or
+        $missingFixtureText -notmatch 'ERROR / FIXTURE_NOT_FOUND' -or
+        $missingFixtureText -match '(?i)(?:[A-Z]:[\\/]|\\\\)') {
+        throw [InvalidOperationException]::new('REAL_INSPECTION_SAFE_FAILURE_TEST_FAILED')
+    }
     $realBridgeScriptContent = Get-Content -LiteralPath (
         Join-Path $PSScriptRoot 'Test-RealAutoCADBridge.ps1') -Raw
     $contextScriptContent = Get-Content -LiteralPath (
         Join-Path $PSScriptRoot 'Test-DocumentContextDispatch.ps1') -Raw
-    if (($realBridgeScriptContent + $contextScriptContent) -match
+    if (($realBridgeScriptContent + $contextScriptContent + $realInspectionScriptContent) -match
         '(?i)(?:ComObject|GetActiveObject|Start-Process\s+.*acad|SendCommand|SendStringToExecute)') {
         throw [InvalidOperationException]::new('REAL_BRIDGE_COM_OR_AUTOSTART_DETECTED')
     }
@@ -359,7 +441,7 @@ if ($null -ne $testFailure) {
 
 [pscustomobject]@{
     result = 'PASS'
-    cases = 25
+    cases = 29
     fixtures = 'EMPTY_PLACEHOLDERS_IN_GIT_IGNORED_PATH'
     paths = 'REDACTED'
 } | ConvertTo-Json

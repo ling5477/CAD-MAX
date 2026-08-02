@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import urlparse
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LOOPBACK_NAMES = frozenset({"localhost"})
@@ -44,6 +45,7 @@ class CadMaxSettings(BaseSettings):
     http_path: str = "/mcp"
     bridge_url: str | None = None
     bridge_token_file: Path | None = None
+    mcp_http_token_file: Path | None = None
     bridge_timeout_seconds: float = Field(default=5.0, gt=0, le=120)
     bridge_connect_timeout_seconds: float = Field(default=1.0, gt=0, le=5)
     bridge_read_timeout_seconds: float = Field(default=2.0, gt=0, le=5)
@@ -96,6 +98,24 @@ class CadMaxSettings(BaseSettings):
         if value is not None and not value.is_absolute():
             raise ValueError("bridgeTokenFile must be absolute")
         return value
+
+    @field_validator("mcp_http_token_file")
+    @classmethod
+    def require_absolute_mcp_http_token_file(cls, value: Path | None) -> Path | None:
+        """A Streamable HTTP caller token path must not depend on process cwd."""
+        if value is not None and not value.is_absolute():
+            raise ValueError("mcpHttpTokenFile must be absolute")
+        return value
+
+    @model_validator(mode="after")
+    def require_distinct_bearer_token_paths(self) -> CadMaxSettings:
+        """Prevent accidental reuse of the bridge bearer file at the MCP boundary."""
+        if self.mcp_http_token_file is not None and self.bridge_token_file is not None:
+            caller_path = os.path.normcase(os.path.normpath(str(self.mcp_http_token_file)))
+            bridge_path = os.path.normcase(os.path.normpath(str(self.bridge_token_file)))
+            if caller_path == bridge_path:
+                raise ValueError("mcpHttpTokenFile must differ from bridgeTokenFile")
+        return self
 
     @field_validator("allowed_roots")
     @classmethod

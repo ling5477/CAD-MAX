@@ -239,6 +239,48 @@ try {
         -RoadmapAction 'IMPLEMENT_PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH'
     Assert-Positive 'Phase 1.2 accepted with connected runtime' $phase12Accepted
 
+    $phase14AcceptedStatus = New-Schema2Status `
+        -AcceptedBatch 'PHASE_1_4_READONLY_DOCUMENT_INSPECTION' `
+        -AcceptedCommit 'ffffffffffffffffffffffffffffffffffffffff' `
+        -AcceptedRun '999' `
+        -WorkBatch 'PHASE_1_5_READONLY_OBJECT_INSPECTION' `
+        -NextAction 'IMPLEMENT_PHASE_1_5_READONLY_OBJECT_INSPECTION' `
+        -AutoCadRuntime 'CONNECTED' `
+        -DwgRead 'IMPLEMENTED'
+    $phase14Accepted = New-Fixture `
+        -Name 'phase-1-4-accepted-positive' `
+        -StatusContent $phase14AcceptedStatus `
+        -RoadmapAction 'IMPLEMENT_PHASE_1_5_READONLY_OBJECT_INSPECTION'
+    Assert-Positive 'Phase 1.4 accepted with controlled DWG read' $phase14Accepted
+
+    $earlyDwgReadStatus = New-Schema2Status `
+        -AcceptedBatch 'PHASE_1_3_DOCUMENT_CONTEXT_DISPATCH' `
+        -AcceptedCommit 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' `
+        -AcceptedRun '789' `
+        -WorkBatch 'PHASE_1_4_READONLY_DOCUMENT_INSPECTION' `
+        -NextAction 'IMPLEMENT_PHASE_1_4_READONLY_DOCUMENT_INSPECTION' `
+        -AutoCadRuntime 'CONNECTED' `
+        -DwgRead 'IMPLEMENTED'
+    $earlyDwgRead = New-Fixture `
+        -Name 'dwg-read-before-phase-1-4-negative' `
+        -StatusContent $earlyDwgReadStatus `
+        -RoadmapAction 'IMPLEMENT_PHASE_1_4_READONLY_DOCUMENT_INSPECTION'
+    Assert-Negative `
+        'DWG read cannot be implemented before Phase 1.4 acceptance' `
+        $earlyDwgRead `
+        'SAFETY_FACT_PREREQUISITE_MISSING key=dwg_read'
+
+    $acceptedWithoutDwgRead = New-Fixture `
+        -Name 'phase-1-4-without-dwg-read-negative' `
+        -StatusContent $phase14AcceptedStatus.Replace(
+            'dwg_read=IMPLEMENTED',
+            'dwg_read=NOT_IMPLEMENTED') `
+        -RoadmapAction 'IMPLEMENT_PHASE_1_5_READONLY_OBJECT_INSPECTION'
+    Assert-Negative `
+        'Phase 1.4 acceptance requires implemented DWG read' `
+        $acceptedWithoutDwgRead `
+        'ACCEPTED_WORK_BATCH_SAFETY_FACT_MISMATCH.*key=dwg_read'
+
     $earlyConnectedStatus = New-Schema2Status `
         -AcceptedBatch 'PHASE_1_MAINTENANCE_DEPENDENCIES' `
         -AcceptedCommit 'dddddddddddddddddddddddddddddddddddddddd' `
@@ -256,10 +298,10 @@ try {
         'SAFETY_FACT_PREREQUISITE_MISSING key=autocad_runtime'
 
     foreach ($case in @(
-        @{ Name = 'phase-1-2-dwg-read'; Parameter = 'DwgRead'; Value = 'IMPLEMENTED'; Key = 'dwg_read' },
-        @{ Name = 'phase-1-2-dwg-write'; Parameter = 'DwgWrite'; Value = 'IMPLEMENTED'; Key = 'dwg_write' },
-        @{ Name = 'phase-1-2-allow-write'; Parameter = 'AllowWrite'; Value = 'ENABLED'; Key = 'allow_write' },
-        @{ Name = 'phase-1-2-allow-script'; Parameter = 'AllowScript'; Value = 'ENABLED'; Key = 'allow_script' }
+        @{ Name = 'phase-1-2-dwg-read'; Parameter = 'DwgRead'; Value = 'IMPLEMENTED'; Key = 'dwg_read'; Expected = 'SAFETY_FACT_PREREQUISITE_MISSING key=dwg_read' },
+        @{ Name = 'phase-1-2-dwg-write'; Parameter = 'DwgWrite'; Value = 'IMPLEMENTED'; Key = 'dwg_write'; Expected = 'SAFETY_FACT_CONTRADICTION key=dwg_write' },
+        @{ Name = 'phase-1-2-allow-write'; Parameter = 'AllowWrite'; Value = 'ENABLED'; Key = 'allow_write'; Expected = 'SAFETY_FACT_CONTRADICTION key=allow_write' },
+        @{ Name = 'phase-1-2-allow-script'; Parameter = 'AllowScript'; Value = 'ENABLED'; Key = 'allow_script'; Expected = 'SAFETY_FACT_CONTRADICTION key=allow_script' }
     )) {
         $parameters = @{
             AcceptedBatch = 'PHASE_1_2_LOOPBACK_BRIDGE_LIFECYCLE'
@@ -278,7 +320,7 @@ try {
         Assert-Negative `
             "Phase 1.2 rejects unsafe fact $($case.Key)" `
             $fixture `
-            "SAFETY_FACT_CONTRADICTION key=$($case.Key)"
+            $case.Expected
     }
 
     $skippedMaintenanceStatus = New-Schema2Status `

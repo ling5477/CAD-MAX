@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import perf_counter
@@ -25,6 +26,19 @@ from cad_max_mcp.models.bridge import (
     ContextProbeData,
     ContextProbeRequest,
 )
+from cad_max_mcp.models.drawing import (
+    DRAWING_DATA_MODELS,
+    ActiveDocumentData,
+    DocumentListData,
+    DrawingBoundsData,
+    DrawingInspectionData,
+    DrawingInspectRequest,
+    DrawingLayoutsData,
+    DrawingOperation,
+    DrawingStatusData,
+    DrawingSystemMetadataData,
+    DrawingUnitsData,
+)
 from cad_max_mcp.models.envelope import ResultEnvelope, Status
 from cad_max_mcp.security.bridge_token import BridgeTokenError, load_bridge_token
 
@@ -44,15 +58,14 @@ EXPECTED_TRUE_CAPABILITIES = frozenset(
         "bridge.heartbeat",
         "bridge.contextDispatch",
         "bridge.contextProbe",
+        "drawing.status",
+        "drawing.list_documents",
+        "dwg.read",
     }
 )
 REQUIRED_FALSE_CAPABILITIES = frozenset(
     {
-        "drawing.active_document",
-        "drawing.list_documents",
-        "drawing.units",
-        "drawing.bounds",
-        "drawing.layouts",
+        "drawing.revision",
         "query.entity_count",
         "query.count_by_type",
         "query.list_entities",
@@ -69,7 +82,6 @@ REQUIRED_FALSE_CAPABILITIES = frozenset(
         "selection.get_pickfirst",
         "preview.render_pdf",
         "preview.render_png",
-        "dwg.read",
         "dwg.write",
         "script",
         "command",
@@ -138,23 +150,64 @@ class AutoCadBridgeBackend:
         return envelope
 
     async def drawing_status(self, request_id: UUID, trace_id: UUID) -> ResultEnvelope:
-        """Report connection state without claiming document or DWG access."""
-        probe = await self.health()
-        if not probe.envelope or not probe.envelope.success:
+        """Preserve the original status operation through the strict Phase 1.4 route."""
+        return await self.drawing_inspect(
+            DrawingOperation.STATUS,
+            expected_document_id=None,
+            deadline_ms=5000,
+            request_id=request_id,
+            trace_id=trace_id,
+        )
+
+    async def drawing_inspect(
+        self,
+        operation: DrawingOperation,
+        *,
+        expected_document_id: str | None,
+        deadline_ms: int,
+        request_id: UUID,
+        trace_id: UUID,
+    ) -> ResultEnvelope:
+        """Run one fixed drawing inspection without retrying busy/modal/timeout."""
+        if deadline_ms < 100 or deadline_ms > 10_000:
             return ResultEnvelope.failure(
                 request_id=request_id,
                 trace_id=trace_id,
-                status=probe.status,
-                message=probe.message,
-                data={"connectionState": probe.connection_state.value},
+                status=Status.INVALID_ARGUMENT,
+                message="Drawing inspection deadline is invalid",
             )
-        return ResultEnvelope.failure(
-            request_id=request_id,
-            trace_id=trace_id,
-            status=Status.NOT_IMPLEMENTED,
-            message="AutoCAD document status is not implemented",
-            data={"connectionState": self._connection_state.value},
-        )
+        health_envelope, health = await self._request_typed("health", BridgeHealthData)
+        self._classify_connection(health_envelope, health)
+        if not health_envelope.success or health is None:
+            return ResultEnvelope.failure(
+                request_id=request_id,
+                trace_id=trace_id,
+                status=health_envelope.status,
+                message=_probe_message(health_envelope.status, self._connection_state),
+            )
+
+        try:
+            envelope, data = await self._request_drawing_typed(
+                operation=operation,
+                deadline=datetime.now(UTC) + timedelta(milliseconds=deadline_ms),
+                expected_instance_id=health.instance_id,
+                expected_document_id=expected_document_id,
+                request_id=request_id,
+                trace_id=trace_id,
+            )
+        except ValidationError:
+            return ResultEnvelope.failure(
+                request_id=request_id,
+                trace_id=trace_id,
+                status=Status.INVALID_ARGUMENT,
+                message="Drawing inspection request is invalid",
+            )
+        if envelope.success and data is not None and data.active_document_id is not None:
+            self._document_id = data.active_document_id
+        elif envelope.status in {Status.DOCUMENT_DESTROYED, Status.DOCUMENT_NOT_FOUND}:
+            if expected_document_id is None or expected_document_id == self._document_id:
+                self._document_id = None
+        return envelope
 
     async def context_probe(
         self,
@@ -237,8 +290,188 @@ class AutoCadBridgeBackend:
             "readOnly": True,
             "allowWrite": False,
             "allowScript": False,
-            "documentContentAccess": False,
-            "dwgRead": False,
+            "documentContentAccess": health.document_access,
+            "dwgRead": health.dwg_read,
+            "dwgWrite": False,
+        }
+        return (0 if success else 1), report
+
+    async def drawing_doctor(
+        self,
+        expected_active_document_name: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        """Validate every Phase 1.4 read operation without emitting document names."""
+        health_envelope, health = await self._request_typed("health", BridgeHealthData)
+        capabilities_envelope, capabilities = await self._request_typed(
+            "capabilities",
+            BridgeCapabilitiesData,
+        )
+        self._classify_connection(health_envelope, health)
+        if (
+            not health_envelope.success
+            or health is None
+            or not capabilities_envelope.success
+            or capabilities is None
+        ):
+            status = (
+                health_envelope.status
+                if not health_envelope.success
+                else capabilities_envelope.status
+            )
+            return 1, self._drawing_doctor_failure(status)
+
+        context_envelope, context = await self._request_context_typed(
+            deadline=datetime.now(UTC) + timedelta(seconds=5),
+            expected_instance_id=health.instance_id,
+            expected_document_id=None,
+        )
+        if not context_envelope.success or context is None:
+            return _context_exit_code(context_envelope.status), self._drawing_doctor_failure(
+                context_envelope.status
+            )
+
+        results: dict[DrawingOperation, DrawingInspectionData] = {}
+        for operation in DrawingOperation:
+            selector = (
+                None
+                if operation in {DrawingOperation.STATUS, DrawingOperation.LIST_DOCUMENTS}
+                else context.active_document_id
+            )
+            envelope, data = await self._request_drawing_typed(
+                operation=operation,
+                deadline=datetime.now(UTC) + timedelta(seconds=5),
+                expected_instance_id=health.instance_id,
+                expected_document_id=selector,
+                request_id=uuid4(),
+                trace_id=uuid4(),
+            )
+            if not envelope.success or data is None:
+                return _context_exit_code(envelope.status), self._drawing_doctor_failure(
+                    envelope.status
+                )
+            results[operation] = data
+
+        second_envelope, second_active = await self._request_drawing_typed(
+            operation=DrawingOperation.ACTIVE_DOCUMENT,
+            deadline=datetime.now(UTC) + timedelta(seconds=5),
+            expected_instance_id=health.instance_id,
+            expected_document_id=context.active_document_id,
+            request_id=uuid4(),
+            trace_id=uuid4(),
+        )
+        if not second_envelope.success or not isinstance(second_active, ActiveDocumentData):
+            return _context_exit_code(second_envelope.status), self._drawing_doctor_failure(
+                second_envelope.status
+            )
+
+        drawing_status_data = cast(DrawingStatusData, results[DrawingOperation.STATUS])
+        documents = cast(DocumentListData, results[DrawingOperation.LIST_DOCUMENTS])
+        active = cast(ActiveDocumentData, results[DrawingOperation.ACTIVE_DOCUMENT])
+        units = cast(DrawingUnitsData, results[DrawingOperation.UNITS])
+        bounds = cast(DrawingBoundsData, results[DrawingOperation.BOUNDS])
+        layouts = cast(DrawingLayoutsData, results[DrawingOperation.LAYOUTS])
+        metadata = cast(
+            DrawingSystemMetadataData,
+            results[DrawingOperation.SYSTEM_METADATA],
+        )
+        instance_ids = {value.instance_id for value in results.values()}
+        expected_true = {
+            "drawing.status",
+            "drawing.list_documents",
+            "drawing.active_document",
+            "drawing.units",
+            "drawing.bounds",
+            "drawing.layouts",
+            "drawing.system_metadata",
+            "dwg.read",
+        }
+        false_capabilities = {
+            name for name, enabled in capabilities.capabilities.items() if not enabled
+        }
+        forbidden_false = REQUIRED_FALSE_CAPABILITIES.issubset(false_capabilities)
+        expected_name_is_safe = (
+            expected_active_document_name is None
+            or _is_safe_document_display_name(expected_active_document_name)
+        )
+        expected_document_matches_active = expected_active_document_name is None or (
+            expected_name_is_safe
+            and active.display_name == expected_active_document_name
+            and any(
+                document.is_active
+                and document.document_id == active.document_id
+                and document.display_name == expected_active_document_name
+                for document in documents.documents
+            )
+        )
+        checks = {
+            "sameInstanceId": instance_ids == {health.instance_id},
+            "sameActiveDocumentId": all(
+                value.active_document_id == context.active_document_id
+                for value in results.values()
+                if value.operation not in {DrawingOperation.STATUS, DrawingOperation.LIST_DOCUMENTS}
+            )
+            and second_active.active_document_id == context.active_document_id,
+            "mainThreadVerified": all(value.main_thread_verified for value in results.values()),
+            "applicationContext": (
+                drawing_status_data.execution_context == "APPLICATION_CONTEXT"
+                and documents.execution_context == "APPLICATION_CONTEXT"
+            ),
+            "documentCommandContext": all(
+                value.execution_context == "DOCUMENT_COMMAND_CONTEXT"
+                for value in (active, units, bounds, layouts, metadata)
+            ),
+            "readOnlyEvidence": all(value.read_mode == "READ_ONLY" for value in results.values()),
+            "transactionTruthful": layouts.transaction_used
+            and all(
+                not value.transaction_used
+                for value in (
+                    drawing_status_data,
+                    documents,
+                    active,
+                    units,
+                    bounds,
+                    metadata,
+                )
+            ),
+            "documentCountConsistent": (
+                drawing_status_data.document_count == documents.document_count
+                and documents.document_count > 0
+            ),
+            "activeDocumentMatchesExpectedName": expected_document_matches_active,
+            "capabilityHonesty": (
+                all(capabilities.capabilities.get(name, False) for name in expected_true)
+                and forbidden_false
+            ),
+            "writeScriptObjectCapabilitiesFalse": forbidden_false,
+            "healthDwgRead": (
+                health.document_access
+                and health.dwg_read
+                and not health.dwg_write
+                and health.read_only
+                and not health.allow_write
+                and not health.allow_script
+            ),
+        }
+        success = all(checks.values())
+        if success:
+            self._document_id = context.active_document_id
+        report = {
+            "schemaVersion": "1.0",
+            "status": "OK" if success else "DRAWING_VALIDATION_FAILED",
+            "connectionState": self._connection_state.value,
+            "connected": self._connection_state is BridgeConnectionState.CONNECTED,
+            "checks": checks,
+            "instanceId": str(health.instance_id),
+            "activeDocument": "REDACTED",
+            "documentCount": documents.document_count,
+            "layoutCount": layouts.layout_count,
+            "boundsState": bounds.bounds_state,
+            "insertionUnits": units.insertion_units,
+            "currentSpace": metadata.current_space,
+            "readOnly": True,
+            "allowWrite": False,
+            "allowScript": False,
+            "dwgRead": True,
             "dwgWrite": False,
         }
         return (0 if success else 1), report
@@ -284,7 +517,20 @@ class AutoCadBridgeBackend:
             heartbeat_two.capability_revision,
         }
         true_capabilities = {name for name, enabled in capabilities.capabilities.items() if enabled}
-        fixed_true_capabilities = true_capabilities - {"documentContext.available"}
+        dynamic_document_capabilities = {
+            "documentContext.available",
+            "drawing.active_document",
+            "drawing.units",
+            "drawing.bounds",
+            "drawing.layouts",
+            "drawing.system_metadata",
+        }
+        fixed_true_capabilities = true_capabilities - dynamic_document_capabilities
+        expected_dynamic_document_capabilities = (
+            dynamic_document_capabilities
+            if capabilities.capabilities.get("documentContext.available", False)
+            else set()
+        )
         false_capabilities_present = REQUIRED_FALSE_CAPABILITIES.issubset(
             {name for name, enabled in capabilities.capabilities.items() if not enabled}
         )
@@ -295,7 +541,10 @@ class AutoCadBridgeBackend:
                 heartbeat_two.heartbeat_sequence > heartbeat_one.heartbeat_sequence
             ),
             "capabilityHonesty": (
-                fixed_true_capabilities == EXPECTED_TRUE_CAPABILITIES and false_capabilities_present
+                fixed_true_capabilities == EXPECTED_TRUE_CAPABILITIES
+                and true_capabilities & dynamic_document_capabilities
+                == expected_dynamic_document_capabilities
+                and false_capabilities_present
             ),
             "pluginReady": all(
                 state is BridgePluginState.READY
@@ -324,6 +573,8 @@ class AutoCadBridgeBackend:
                     heartbeat_two.development_host,
                 )
             ),
+            "healthDocumentAccess": health.document_access,
+            "healthDwgRead": health.dwg_read,
         }
         success = all(checks.values())
         self._connection_state = (
@@ -335,7 +586,12 @@ class AutoCadBridgeBackend:
                 else BridgeConnectionState.INCOMPATIBLE
             )
         )
-        report = self._doctor_report("OK" if success else "BRIDGE_VALIDATION_FAILED", success)
+        report = self._doctor_report(
+            "OK" if success else "BRIDGE_VALIDATION_FAILED",
+            success,
+            document_access=health.document_access,
+            dwg_read=health.dwg_read,
+        )
         report["checks"] = checks
         if success:
             report["instanceId"] = str(health.instance_id)
@@ -349,7 +605,10 @@ class AutoCadBridgeBackend:
         model_type: type[BridgeData],
     ) -> tuple[ResultEnvelope, BridgeData | None]:
         route, _ = ROUTES[operation]
-        return await self._request_route(route, model_type)
+        envelope, data = await self._request_route(route, model_type)
+        if data is not None:
+            self._observe_instance(data)
+        return envelope, data
 
     async def _request_context_typed(
         self,
@@ -381,6 +640,57 @@ class AutoCadBridgeBackend:
                 None,
             )
         if data is not None:
+            if data.instance_id != expected_instance_id or (
+                expected_document_id is not None and data.active_document_id != expected_document_id
+            ):
+                return self._response_binding_failure(request.request_id, request.trace_id)
+            self._observe_instance(data)
+        elif envelope.status in {Status.DOCUMENT_DESTROYED, Status.DOCUMENT_NOT_FOUND}:
+            if expected_document_id is None or expected_document_id == self._document_id:
+                self._document_id = None
+        return envelope, data
+
+    async def _request_drawing_typed(
+        self,
+        *,
+        operation: DrawingOperation,
+        deadline: datetime,
+        expected_instance_id: UUID,
+        expected_document_id: str | None,
+        request_id: UUID,
+        trace_id: UUID,
+    ) -> tuple[ResultEnvelope, DrawingInspectionData | None]:
+        request = DrawingInspectRequest(
+            request_id=request_id,
+            trace_id=trace_id,
+            deadline_utc=deadline,
+            expected_instance_id=expected_instance_id,
+            operation=operation,
+            expected_document_id=expected_document_id,
+        )
+        model_type = cast(type[DrawingInspectionData], DRAWING_DATA_MODELS[operation])
+        envelope, data = await self._request_route(
+            "/v1/drawing/inspect",
+            model_type,
+            method="POST",
+            json_body=request.model_dump(mode="json", by_alias=True),
+        )
+        if envelope.request_id != request.request_id or envelope.trace_id != request.trace_id:
+            self._connection_state = BridgeConnectionState.INCOMPATIBLE
+            return (
+                ResultEnvelope.failure(
+                    request_id=request.request_id,
+                    trace_id=request.trace_id,
+                    status=Status.SCHEMA_MISMATCH,
+                    message="AutoCAD bridge returned an incompatible response",
+                ),
+                None,
+            )
+        if data is not None:
+            if data.instance_id != expected_instance_id or (
+                expected_document_id is not None and data.active_document_id != expected_document_id
+            ):
+                return self._response_binding_failure(request.request_id, request.trace_id)
             self._observe_instance(data)
         elif envelope.status in {Status.DOCUMENT_DESTROYED, Status.DOCUMENT_NOT_FOUND}:
             if expected_document_id is None or expected_document_id == self._document_id:
@@ -408,6 +718,7 @@ class AutoCadBridgeBackend:
                 timeout=self._timeout,
                 transport=self._transport,
                 follow_redirects=False,
+                trust_env=False,
             ) as client:
                 async with client.stream(
                     method,
@@ -438,21 +749,54 @@ class AutoCadBridgeBackend:
             return _failure(Status.NOT_CONNECTED, "AutoCAD bridge is not connected", started), None
 
         try:
-            payload: Any = json.loads(body)
+            payload: Any = json.loads(
+                body,
+                parse_constant=_reject_non_finite_json_constant,
+                parse_float=_parse_finite_json_float,
+            )
             envelope = ResultEnvelope.model_validate(payload)
             if (http_status == 200) != envelope.success:
                 return self._schema_failure(started)
             if not envelope.success:
                 self._classify_failure(envelope.status)
-                return envelope, None
+                return _sanitized_bridge_failure(envelope, started), None
             data = model_type.model_validate(envelope.data)
-        except (UnicodeDecodeError, json.JSONDecodeError, ValidationError, ValueError):
+        except (
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            RecursionError,
+            ValidationError,
+            ValueError,
+        ):
             return self._schema_failure(started)
 
-        self._observe_instance(data)
-        return envelope.model_copy(
-            update={"duration_ms": max(envelope.duration_ms, _elapsed_ms(started))}
-        ), data
+        return (
+            ResultEnvelope.ok(
+                request_id=envelope.request_id,
+                trace_id=envelope.trace_id,
+                message="AutoCAD bridge request completed",
+                data=data.model_dump(mode="json", by_alias=True),
+                duration_ms=max(envelope.duration_ms, _elapsed_ms(started)),
+            ),
+            data,
+        )
+
+    def _response_binding_failure(
+        self,
+        request_id: UUID,
+        trace_id: UUID,
+    ) -> tuple[ResultEnvelope, None]:
+        """Reject a typed response before it can change instance or document state."""
+        self._connection_state = BridgeConnectionState.INCOMPATIBLE
+        return (
+            ResultEnvelope.failure(
+                request_id=request_id,
+                trace_id=trace_id,
+                status=Status.SCHEMA_MISMATCH,
+                message="AutoCAD bridge returned an incompatible response",
+            ),
+            None,
+        )
 
     def _observe_instance(self, data: BridgeInstanceModel) -> None:
         instance_id = data.instance_id
@@ -521,7 +865,14 @@ class AutoCadBridgeBackend:
             None,
         )
 
-    def _doctor_report(self, status: str, connected: bool) -> dict[str, Any]:
+    def _doctor_report(
+        self,
+        status: str,
+        connected: bool,
+        *,
+        document_access: bool = False,
+        dwg_read: bool = False,
+    ) -> dict[str, Any]:
         return {
             "schemaVersion": "1.0",
             "status": status,
@@ -530,8 +881,8 @@ class AutoCadBridgeBackend:
             "readOnly": True,
             "allowWrite": False,
             "allowScript": False,
-            "documentAccess": False,
-            "dwgRead": False,
+            "documentAccess": document_access,
+            "dwgRead": dwg_read,
             "dwgWrite": False,
         }
 
@@ -551,6 +902,20 @@ class AutoCadBridgeBackend:
             "dwgWrite": False,
         }
 
+    def _drawing_doctor_failure(self, status: Status) -> dict[str, Any]:
+        return {
+            "schemaVersion": "1.0",
+            "status": status.value,
+            "connectionState": self._connection_state.value,
+            "connected": self._connection_state is BridgeConnectionState.CONNECTED,
+            "activeDocument": "REDACTED",
+            "readOnly": True,
+            "allowWrite": False,
+            "allowScript": False,
+            "dwgRead": False,
+            "dwgWrite": False,
+        }
+
 
 def _failure(status: Status, message: str, started: float | None = None) -> ResultEnvelope:
     return ResultEnvelope.failure(
@@ -560,6 +925,28 @@ def _failure(status: Status, message: str, started: float | None = None) -> Resu
         message=message,
         duration_ms=0 if started is None else _elapsed_ms(started),
     )
+
+
+def _sanitized_bridge_failure(envelope: ResultEnvelope, started: float) -> ResultEnvelope:
+    """Drop bridge-owned diagnostics before a failure can cross the MCP boundary."""
+    return ResultEnvelope.failure(
+        request_id=envelope.request_id,
+        trace_id=envelope.trace_id,
+        status=envelope.status,
+        message=_safe_bridge_failure_message(envelope.status),
+        duration_ms=max(envelope.duration_ms, _elapsed_ms(started)),
+    )
+
+
+def _safe_bridge_failure_message(status: Status) -> str:
+    """Return a client-owned failure summary with no bridge-provided diagnostic text."""
+    if status is Status.UNAUTHORIZED:
+        return "AutoCAD bridge authorization failed"
+    if status in {Status.NOT_CONNECTED, Status.BACKEND_UNAVAILABLE}:
+        return "AutoCAD bridge is not connected"
+    if status in {Status.SCHEMA_MISMATCH, Status.ROUTE_NOT_FOUND}:
+        return "AutoCAD bridge response is unavailable"
+    return "AutoCAD bridge request failed"
 
 
 def _token_error_message(status: Status) -> str:
@@ -586,6 +973,30 @@ def _probe_message(status: Status, connection_state: BridgeConnectionState) -> s
 
 def _elapsed_ms(started: float) -> int:
     return max(0, int((perf_counter() - started) * 1000))
+
+
+def _reject_non_finite_json_constant(value: str) -> None:
+    """Reject JSON extensions such as NaN and Infinity before model validation."""
+    del value
+    raise ValueError("non-finite JSON number")
+
+
+def _parse_finite_json_float(value: str) -> float:
+    """Reject numeric literals that overflow to infinity during JSON parsing."""
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("non-finite JSON number")
+    return parsed
+
+
+def _is_safe_document_display_name(value: str) -> bool:
+    """Accept only a basename that could already appear in a redacted drawing response."""
+    return (
+        0 < len(value) <= 128
+        and value not in {".", ".."}
+        and not any(character in value for character in ("/", "\\", ":"))
+        and not any(ord(character) < 32 or ord(character) == 127 for character in value)
+    )
 
 
 def _context_exit_code(status: Status) -> int:

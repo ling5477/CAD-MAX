@@ -56,8 +56,8 @@ class BridgeHealthData(BridgeInstanceModel):
     plugin_state: BridgePluginState
     autocad_connected: bool
     development_host: bool
-    document_access: Literal[False]
-    dwg_read: Literal[False]
+    document_access: bool
+    dwg_read: bool
     dwg_write: Literal[False]
     read_only: Literal[True]
     allow_write: Literal[False]

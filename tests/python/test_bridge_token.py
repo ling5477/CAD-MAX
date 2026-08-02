@@ -2,26 +2,24 @@
 
 from __future__ import annotations
 
-import json
 import secrets
 from pathlib import Path
 
 import pytest
 
 from cad_max_mcp.security.bridge_token import BridgeTokenError, load_bridge_token
+from token_file_helpers import grant_insecure_test_reader, write_secure_token_file
 
 
 def test_valid_token_file(tmp_path: Path) -> None:
     token_file = tmp_path / "bridge-token.json"
-    token_file.write_text(
-        json.dumps(
-            {
-                "schemaVersion": "1.0",
-                "token": secrets.token_urlsafe(32),
-                "createdAtUtc": "2026-07-19T00:00:00Z",
-            }
-        ),
-        encoding="utf-8",
+    write_secure_token_file(
+        token_file,
+        {
+            "schemaVersion": "1.0",
+            "token": secrets.token_urlsafe(32),
+            "createdAtUtc": "2026-07-19T00:00:00Z",
+        },
     )
     token = load_bridge_token(token_file)
 
@@ -48,12 +46,30 @@ def test_invalid_schema_and_short_token(
     error_code: str,
 ) -> None:
     token_file = tmp_path / "token.json"
-    token_file.write_text(json.dumps(payload), encoding="utf-8")
+    write_secure_token_file(token_file, payload)
 
     with pytest.raises(BridgeTokenError) as raised:
         load_bridge_token(token_file)
 
     assert raised.value.error_code == error_code
+
+
+def test_broad_token_reader_fails_closed(tmp_path: Path) -> None:
+    token_file = tmp_path / "token.json"
+    write_secure_token_file(
+        token_file,
+        {
+            "schemaVersion": "1.0",
+            "token": secrets.token_urlsafe(32),
+            "createdAtUtc": "2026-07-19T00:00:00Z",
+        },
+    )
+    grant_insecure_test_reader(token_file)
+
+    with pytest.raises(BridgeTokenError) as raised:
+        load_bridge_token(token_file)
+
+    assert raised.value.error_code == "TOKEN_FILE_INSECURE"
 
 
 def test_missing_token_path_is_redacted(tmp_path: Path) -> None:

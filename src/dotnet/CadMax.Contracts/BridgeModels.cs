@@ -35,6 +35,7 @@ public static class BridgeRoutes
     public const string Capabilities = "/v1/capabilities";
     public const string Heartbeat = "/v1/heartbeat";
     public const string ContextProbe = "/v1/context/probe";
+    public const string DrawingInspect = "/v1/drawing/inspect";
 
     /// <summary>The immutable production route allowlist.</summary>
     public static IReadOnlySet<string> Production { get; } = new HashSet<string>(

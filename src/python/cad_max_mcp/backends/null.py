@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from cad_max_mcp.backends.base import BackendProbe
 from cad_max_mcp.models.bridge import BridgeConnectionState
+from cad_max_mcp.models.drawing import DrawingOperation
 from cad_max_mcp.models.envelope import ResultEnvelope, Status
 
 
@@ -46,6 +47,19 @@ class NullCadBackend:
             status=Status.BACKEND_NOT_CONFIGURED,
             message="AutoCAD bridge is not configured",
         )
+
+    async def drawing_inspect(
+        self,
+        operation: DrawingOperation,
+        *,
+        expected_document_id: str | None,
+        deadline_ms: int,
+        request_id: UUID,
+        trace_id: UUID,
+    ) -> ResultEnvelope:
+        """Never fabricate drawing data when no bridge is configured."""
+        del operation, expected_document_id, deadline_ms
+        return await self.drawing_status(request_id, trace_id)
 
     def capabilities(self) -> list[str]:
         """The null backend provides no CAD capabilities."""

@@ -124,6 +124,57 @@ public sealed class BridgeContractSerializationTests
         Assert.Equal("OK", serialized.RootElement.GetProperty("lastDispatchStatus").GetString());
     }
 
+    [Fact]
+    public void DrawingInspectionUsesStrictOperationAndReadEvidence()
+    {
+        var request = new DrawingInspectRequest(
+            CadProtocol.SchemaVersion,
+            Guid.NewGuid().ToString("D"),
+            Guid.NewGuid().ToString("D"),
+            DateTimeOffset.UtcNow.AddSeconds(5),
+            Guid.NewGuid().ToString("D"),
+            DrawingOperation.ListDocuments,
+            ExpectedDocumentId: null);
+        var requestJson = JsonSerializer.Serialize(request, CadJson.Options);
+        using var requestDocument = JsonDocument.Parse(requestJson);
+        Assert.Equal(
+            "list_documents",
+            requestDocument.RootElement.GetProperty("operation").GetString());
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<DrawingInspectRequest>(
+            requestJson[..^1] + ",\"arguments\":{}}",
+            CadJson.Options));
+
+        var data = new DrawingUnitsData(
+            request.ExpectedInstanceId,
+            Guid.NewGuid().ToString("D"),
+            DrawingOperation.Units,
+            MainThreadVerified: true,
+            DrawingExecutionContext.DocumentCommandContext,
+            "doc_AAAAAAAAAAAAAAAAAAAAAA",
+            QueueDelayMs: 1,
+            ExecutionMs: 1,
+            DrawingReadMode.ReadOnly,
+            TransactionUsed: false,
+            DrawingInsertionUnits.Millimeters,
+            DrawingLinearFormat.DecimalFormat,
+            LinearPrecision: 4,
+            DrawingAngularFormat.DecimalDegrees,
+            AngularPrecision: 2,
+            Unitless: false,
+            MillimetersPerDrawingUnit: 1d);
+        using var dataDocument = JsonDocument.Parse(JsonSerializer.Serialize(data, CadJson.Options));
+        var root = dataDocument.RootElement;
+        Assert.Equal("units", root.GetProperty("operation").GetString());
+        Assert.Equal("READ_ONLY", root.GetProperty("readMode").GetString());
+        Assert.Equal(
+            "DOCUMENT_COMMAND_CONTEXT",
+            root.GetProperty("executionContext").GetString());
+        Assert.Equal("DECIMAL", root.GetProperty("linearFormat").GetString());
+        Assert.False(root.TryGetProperty("objectId", out _));
+        Assert.False(root.TryGetProperty("handle", out _));
+        Assert.False(root.TryGetProperty("path", out _));
+    }
+
     private static string FindContract(string fileName)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

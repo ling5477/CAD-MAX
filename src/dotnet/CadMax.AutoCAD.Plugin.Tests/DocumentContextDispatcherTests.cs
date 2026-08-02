@@ -244,6 +244,71 @@ public sealed class DocumentContextDispatcherTests
         Assert.Equal(0, registry.EntryCount);
     }
 
+    [Fact]
+    public async Task ApplicationDrawingInspectionDoesNotRequireAnActiveDocument()
+    {
+        using var dispatcher = new DocumentContextDispatcher();
+        dispatcher.ConfigureInstance(InstanceId);
+        dispatcher.MarkReady(activeDocumentExists: false, documentIsQuiescent: false);
+        var request = CreateDrawingRequest(DrawingOperation.ListDocuments);
+
+        var task = dispatcher.EnqueueDrawingAsync(request, CancellationToken.None);
+
+        Assert.Equal(
+            DocumentDispatchTakeResult.Started,
+            dispatcher.TryTakeNext(out var item));
+        Assert.NotNull(item);
+        Assert.Equal(DocumentDispatchScope.Application, item.Scope);
+        Assert.Same(request, item.DrawingRequest);
+        Assert.True(dispatcher.Complete(item, Success(item)));
+        Assert.True((await task).Success);
+    }
+
+    [Fact]
+    public async Task DocumentDrawingInspectionRequiresActiveQuiescentDocument()
+    {
+        using var dispatcher = new DocumentContextDispatcher();
+        dispatcher.ConfigureInstance(InstanceId);
+        dispatcher.MarkReady(activeDocumentExists: false, documentIsQuiescent: false);
+
+        var result = await dispatcher.EnqueueDrawingAsync(
+            CreateDrawingRequest(DrawingOperation.Units),
+            CancellationToken.None);
+
+        Assert.Equal(CadStatus.NoActiveDocument, result.Status);
+        Assert.Equal(0, dispatcher.GetSnapshot().QueueDepth);
+    }
+
+    [Fact]
+    public async Task ApplicationOperationRejectsDocumentSelector()
+    {
+        using var dispatcher = CreateReadyDispatcher();
+        var request = CreateDrawingRequest(DrawingOperation.Status) with
+        {
+            ExpectedDocumentId = "doc_AAAAAAAAAAAAAAAAAAAAAA",
+        };
+
+        var result = await dispatcher.EnqueueDrawingAsync(request, CancellationToken.None);
+
+        Assert.Equal(CadStatus.InvalidArgument, result.Status);
+        Assert.Equal(0, dispatcher.GetSnapshot().QueueDepth);
+    }
+
+    [Fact]
+    public async Task CompletionSurvivesDisposedDeadlineMonitorCancellation()
+    {
+        using var dispatcher = CreateReadyDispatcher();
+        var task = dispatcher.EnqueueAsync(CreateRequest(), CancellationToken.None);
+        Assert.Equal(DocumentDispatchTakeResult.Started, dispatcher.TryTakeNext(out var item));
+        Assert.NotNull(item);
+
+        item!.DeadlineMonitorCancellation.Dispose();
+
+        Assert.True(dispatcher.Complete(item, Success(item)));
+        Assert.True((await task.WaitAsync(TimeSpan.FromSeconds(1))).Success);
+        Assert.Equal(0, dispatcher.GetSnapshot().InFlightCount);
+    }
+
     private static DocumentContextDispatcher CreateReadyDispatcher(int maxQueueDepth = 32)
     {
         var dispatcher = new DocumentContextDispatcher(maxQueueDepth);
@@ -259,6 +324,16 @@ public sealed class DocumentContextDispatcherTests
             Guid.NewGuid().ToString("D"),
             deadline ?? DateTimeOffset.UtcNow.AddSeconds(5),
             InstanceId,
+            ExpectedDocumentId: null);
+
+    private static DrawingInspectRequest CreateDrawingRequest(DrawingOperation operation) =>
+        new(
+            CadProtocol.SchemaVersion,
+            Guid.NewGuid().ToString("D"),
+            Guid.NewGuid().ToString("D"),
+            DateTimeOffset.UtcNow.AddSeconds(5),
+            InstanceId,
+            operation,
             ExpectedDocumentId: null);
 
     private static CadResultEnvelope Success(DocumentDispatchWorkItem item) =>

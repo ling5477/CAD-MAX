@@ -42,11 +42,14 @@ public sealed class BridgeInstanceResponseService
             ["bridge.contextDispatch"] = false,
             ["bridge.contextProbe"] = false,
             ["documentContext.available"] = false,
+            ["drawing.status"] = false,
             ["drawing.active_document"] = false,
             ["drawing.list_documents"] = false,
             ["drawing.units"] = false,
             ["drawing.bounds"] = false,
             ["drawing.layouts"] = false,
+            ["drawing.system_metadata"] = false,
+            ["drawing.revision"] = false,
             ["query.entity_count"] = false,
             ["query.count_by_type"] = false,
             ["query.list_entities"] = false,
@@ -161,8 +164,12 @@ public sealed class BridgeInstanceResponseService
     private CadResultEnvelope CreateHealth(
         string requestId,
         string traceId,
-        BridgePluginState state) =>
-        CadResultEnvelope.Ok(
+        BridgePluginState state)
+    {
+        var context = GetContextSnapshot();
+        var drawingHandlersAvailable = IsAutoCADConnected(state)
+            && context.DispatcherReady;
+        return CadResultEnvelope.Ok(
             requestId,
             traceId,
             "CAD-MAX AutoCAD bridge is healthy",
@@ -172,12 +179,13 @@ public sealed class BridgeInstanceResponseService
                 state,
                 IsAutoCADConnected(state),
                 metadata.DevelopmentHost,
-                DocumentAccess: false,
-                DwgRead: false,
+                DocumentAccess: drawingHandlersAvailable,
+                DwgRead: drawingHandlersAvailable,
                 DwgWrite: false,
                 ReadOnly: true,
                 AllowWrite: false,
                 AllowScript: false));
+    }
 
     private CadResultEnvelope CreateVersion(
         string requestId,
@@ -213,6 +221,25 @@ public sealed class BridgeInstanceResponseService
             ["bridge.contextDispatch"] = context.DispatcherReady,
             ["bridge.contextProbe"] = context.DispatcherReady,
             ["documentContext.available"] = context.DocumentContextAvailable,
+            ["drawing.status"] = IsAutoCADConnected(state)
+                && context.DispatcherReady
+                && !context.Modal,
+            ["drawing.list_documents"] = IsAutoCADConnected(state)
+                && context.DispatcherReady
+                && !context.Modal,
+            ["drawing.active_document"] = IsAutoCADConnected(state)
+                && context.DocumentContextAvailable,
+            ["drawing.units"] = IsAutoCADConnected(state)
+                && context.DocumentContextAvailable,
+            ["drawing.bounds"] = IsAutoCADConnected(state)
+                && context.DocumentContextAvailable,
+            ["drawing.layouts"] = IsAutoCADConnected(state)
+                && context.DocumentContextAvailable,
+            ["drawing.system_metadata"] = IsAutoCADConnected(state)
+                && context.DocumentContextAvailable,
+            ["dwg.read"] = IsAutoCADConnected(state)
+                && context.DispatcherReady
+                && !context.Modal,
         };
         return CadResultEnvelope.Ok(
             requestId,

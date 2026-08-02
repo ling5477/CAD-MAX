@@ -1,0 +1,387 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cad-max.dev/contracts/drawing-inspection.schema.json",
+  "title": "CAD-MAX Phase 1.4 read-only drawing inspection",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/statusData" },
+    { "$ref": "#/$defs/documentListData" },
+    { "$ref": "#/$defs/activeDocumentData" },
+    { "$ref": "#/$defs/unitsData" },
+    { "$ref": "#/$defs/boundsData" },
+    { "$ref": "#/$defs/layoutsData" },
+    { "$ref": "#/$defs/systemMetadataData" }
+  ],
+  "$defs": {
+    "operation": {
+      "type": "string",
+      "enum": [
+        "status",
+        "list_documents",
+        "active_document",
+        "units",
+        "bounds",
+        "layouts",
+        "system_metadata"
+      ]
+    },
+    "documentId": {
+      "type": "string",
+      "pattern": "^doc_[A-Za-z0-9_-]{22}$"
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "requestId",
+        "traceId",
+        "deadlineUtc",
+        "expectedInstanceId",
+        "operation",
+        "expectedDocumentId"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "requestId": { "type": "string", "format": "uuid" },
+        "traceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+        },
+        "deadlineUtc": { "type": "string", "format": "date-time" },
+        "expectedInstanceId": { "type": "string", "format": "uuid" },
+        "operation": { "$ref": "#/$defs/operation" },
+        "expectedDocumentId": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/documentId" }
+          ]
+        }
+      }
+    },
+    "commonData": {
+      "type": "object",
+      "required": [
+        "instanceId",
+        "dispatchId",
+        "operation",
+        "mainThreadVerified",
+        "executionContext",
+        "activeDocumentId",
+        "queueDelayMs",
+        "executionMs",
+        "readMode",
+        "transactionUsed"
+      ],
+      "properties": {
+        "instanceId": { "type": "string", "format": "uuid" },
+        "dispatchId": { "type": "string", "format": "uuid" },
+        "operation": { "$ref": "#/$defs/operation" },
+        "mainThreadVerified": { "const": true },
+        "executionContext": {
+          "type": "string",
+          "enum": ["APPLICATION_CONTEXT", "DOCUMENT_COMMAND_CONTEXT"]
+        },
+        "activeDocumentId": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/documentId" }
+          ]
+        },
+        "queueDelayMs": { "type": "integer", "minimum": 0 },
+        "executionMs": { "type": "integer", "minimum": 0 },
+        "readMode": { "const": "READ_ONLY" },
+        "transactionUsed": { "type": "boolean" }
+      }
+    },
+    "statusData": {
+      "allOf": [
+        { "$ref": "#/$defs/commonData" },
+        {
+          "type": "object",
+          "required": ["runtimeState", "documentState", "documentCount"],
+          "properties": {
+            "operation": { "const": "status" },
+            "executionContext": { "const": "APPLICATION_CONTEXT" },
+            "transactionUsed": { "const": false },
+            "runtimeState": { "const": "READY" },
+            "documentState": {
+              "type": "string",
+              "enum": ["ACTIVE", "NO_ACTIVE_DOCUMENT"]
+            },
+            "documentCount": { "type": "integer", "minimum": 0, "maximum": 64 }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "documentId",
+        "displayName",
+        "isUntitled",
+        "isActive",
+        "contextAvailable"
+      ],
+      "properties": {
+        "documentId": { "$ref": "#/$defs/documentId" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "isUntitled": { "type": "boolean" },
+        "isActive": { "type": "boolean" },
+        "contextAvailable": { "type": "boolean" }
+      }
+    },
+    "documentListData": {
+      "allOf": [
+        { "$ref": "#/$defs/commonData" },
+        {
+          "type": "object",
+          "required": ["documents", "documentCount"],
+          "properties": {
+            "operation": { "const": "list_documents" },
+            "executionContext": { "const": "APPLICATION_CONTEXT" },
+            "transactionUsed": { "const": false },
+            "documents": {
+              "type": "array",
+              "maxItems": 64,
+              "items": { "$ref": "#/$defs/document" }
+            },
+            "documentCount": { "type": "integer", "minimum": 0, "maximum": 64 }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "activeDocumentData": {
+      "allOf": [
+        { "$ref": "#/$defs/commonData" },
+        {
+          "type": "object",
+          "required": [
+            "documentId",
+            "displayName",
+            "isUntitled",
+            "isQuiescent",
+            "documentState"
+          ],
+          "properties": {
+            "operation": { "const": "active_document" },
+            "activeDocumentId": { "$ref": "#/$defs/documentId" },
+            "executionContext": { "const": "DOCUMENT_COMMAND_CONTEXT" },
+            "transactionUsed": { "const": false },
+            "documentId": { "$ref": "#/$defs/documentId" },
+            "displayName": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "isUntitled": { "type": "boolean" },
+            "isQuiescent": { "const": true },
+            "documentState": { "const": "ACTIVE" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "unitsData": {
+      "allOf": [
+        { "$ref": "#/$defs/commonData" },
+        {
+          "type": "object",
+          "required": [
+            "insertionUnits",
+            "linearFormat",
+            "linearPrecision",
+            "angularFormat",
+            "angularPrecision",
+            "unitless",
+            "millimetersPerDrawingUnit"
+          ],
+          "properties": {
+            "operation": { "const": "units" },
+            "activeDocumentId": { "$ref": "#/$defs/documentId" },
+            "executionContext": { "const": "DOCUMENT_COMMAND_CONTEXT" },
+            "transactionUsed": { "const": false },
+            "insertionUnits": {
+              "type": "string",
+              "enum": [
+                "UNKNOWN",
+                "UNITLESS",
+                "INCHES",
+                "FEET",
+                "MILES",
+                "MILLIMETERS",
+                "CENTIMETERS",
+                "METERS",
+                "KILOMETERS",
+                "MICROINCHES",
+                "MILS",
+                "YARDS",
+                "ANGSTROMS",
+                "NANOMETERS",
+                "MICRONS",
+                "DECIMETERS",
+                "DEKAMETERS",
+                "HECTOMETERS",
+                "GIGAMETERS",
+                "ASTRONOMICAL_UNITS",
+                "LIGHT_YEARS",
+                "PARSECS",
+                "US_SURVEY_FEET",
+                "US_SURVEY_INCHES",
+                "US_SURVEY_YARDS",
+                "US_SURVEY_MILES"
+              ]
+            },
+            "linearFormat": {
+              "type": "string",
+              "enum": [
+                "UNKNOWN",
+                "SCIENTIFIC",
+                "DECIMAL",
+                "ENGINEERING",
+                "ARCHITECTURAL",
+                "FRACTIONAL"
+              ]
+            },
+            "linearPrecision": { "type": "integer", "minimum": 0, "maximum": 8 },
+            "angularFormat": {
+              "type": "string",
+              "enum": [
+                "UNKNOWN",
+                "DECIMAL_DEGREES",
+                "DEGREES_MINUTES_SECONDS",
+                "GRADIANS",
+                "RADIANS",
+                "SURVEYOR_UNITS"
+              ]
+            },
+            "angularPrecision": { "type": "integer", "minimum": 0, "maximum": 8 },
+            "unitless": { "type": "boolean" },
+            "millimetersPerDrawingUnit": {
+              "type": ["number", "null"],
+              "exclusiveMinimum": 0
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "number", "minimum": -1000000000000000, "maximum": 1000000000000000 },
+        "y": { "type": "number", "minimum": -1000000000000000, "maximum": 1000000000000000 },
+        "z": { "type": "number", "minimum": -1000000000000000, "maximum": 1000000000000000 }
+      }
+    },
+    "boundsData": {
+      "allOf": [
+        { "$ref": "#/$defs/commonData" },
+        {
+          "type": "object",
+          "required": [
+            "boundsState",
+            "source",
+            "coordinateSystem",
+            "minimum",
+            "maximum",
+            "size",
+            "extentsMayBeStale"
+          ],
+          "properties": {
+            "operation": { "const": "bounds" },
+            "activeDocumentId": { "$ref": "#/$defs/documentId" },
+            "executionContext": { "const": "DOCUMENT_COMMAND_CONTEXT" },
+            "transactionUsed": { "const": false },
+            "boundsState": { "type": "string", "enum": ["AVAILABLE", "EMPTY"] },
+            "source": { "const": "DATABASE_EXTENTS" },
+            "coordinateSystem": { "const": "WCS" },
+            "minimum": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/point" }] },
+            "maximum": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/point" }] },
+            "size": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/point" }] },
+            "extentsMayBeStale": { "const": true }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "isModel", "tabOrder", "isCurrent"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "isModel": { "type": "boolean" },
+        "tabOrder": { "type": "integer", "minimum": 0 },
+        "isCurrent": { "type": "boolean" }
+      }
+    },
+    "layoutsData": {
+      "allOf": [
+        { "$ref": "#/$defs/commonData" },
+        {
+          "type": "object",
+          "required": ["layouts", "layoutCount"],
+          "properties": {
+            "operation": { "const": "layouts" },
+            "activeDocumentId": { "$ref": "#/$defs/documentId" },
+            "executionContext": { "const": "DOCUMENT_COMMAND_CONTEXT" },
+            "transactionUsed": { "const": true },
+            "layouts": {
+              "type": "array",
+              "maxItems": 256,
+              "items": { "$ref": "#/$defs/layout" }
+            },
+            "layoutCount": { "type": "integer", "minimum": 0, "maximum": 256 }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "systemMetadataData": {
+      "allOf": [
+        { "$ref": "#/$defs/commonData" },
+        {
+          "type": "object",
+          "required": [
+            "fileBacked",
+            "fileFormatVersion",
+            "tileMode",
+            "currentSpace",
+            "currentLayoutName"
+          ],
+          "properties": {
+            "operation": { "const": "system_metadata" },
+            "activeDocumentId": { "$ref": "#/$defs/documentId" },
+            "executionContext": { "const": "DOCUMENT_COMMAND_CONTEXT" },
+            "transactionUsed": { "const": false },
+            "fileBacked": { "type": "boolean" },
+            "fileFormatVersion": {
+              "type": "string",
+              "enum": [
+                "UNKNOWN",
+                "ACAD_R12",
+                "ACAD_R13",
+                "ACAD_R14",
+                "ACAD2000",
+                "ACAD2004",
+                "ACAD2007",
+                "ACAD2010",
+                "ACAD2013",
+                "ACAD2018"
+              ]
+            },
+            "tileMode": { "type": "boolean" },
+            "currentSpace": {
+              "type": "string",
+              "enum": ["UNKNOWN", "MODEL_SPACE", "PAPER_SPACE"]
+            },
+            "currentLayoutName": { "type": "string", "minLength": 1, "maxLength": 128 }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

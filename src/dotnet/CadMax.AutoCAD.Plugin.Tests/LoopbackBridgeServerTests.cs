@@ -304,12 +304,58 @@ public sealed class LoopbackBridgeServerTests
         var inventory = capabilityJson.RootElement.GetProperty("data").GetProperty("capabilities");
 
         Assert.True(inventory.GetProperty("bridge.health").GetBoolean());
-        Assert.False(inventory.GetProperty("drawing.active_document").GetBoolean());
-        Assert.False(inventory.GetProperty("dwg.read").GetBoolean());
+        Assert.True(inventory.GetProperty("drawing.status").GetBoolean());
+        Assert.True(inventory.GetProperty("drawing.list_documents").GetBoolean());
+        Assert.True(inventory.GetProperty("drawing.active_document").GetBoolean());
+        Assert.True(inventory.GetProperty("drawing.units").GetBoolean());
+        Assert.True(inventory.GetProperty("drawing.bounds").GetBoolean());
+        Assert.True(inventory.GetProperty("drawing.layouts").GetBoolean());
+        Assert.True(inventory.GetProperty("drawing.system_metadata").GetBoolean());
+        Assert.False(inventory.GetProperty("drawing.revision").GetBoolean());
+        Assert.True(inventory.GetProperty("dwg.read").GetBoolean());
         Assert.False(inventory.GetProperty("dwg.write").GetBoolean());
         Assert.False(inventory.GetProperty("script").GetBoolean());
         Assert.False(inventory.GetProperty("command").GetBoolean());
         Assert.True(heartbeatTwo.HeartbeatSequence > heartbeatOne.HeartbeatSequence);
+    }
+
+    [Fact]
+    public void NoDocumentKeepsOnlyApplicationDrawingCapabilitiesAvailable()
+    {
+        using var dispatcher = new DocumentContextDispatcher();
+        var service = CreateResponseService(BridgePluginState.Ready, dispatcher);
+        dispatcher.ConfigureInstance(service.InstanceId);
+        dispatcher.MarkReady(activeDocumentExists: false, documentIsQuiescent: false);
+
+        var capabilities = service.CreateResponse(
+            BridgeRoutes.Capabilities,
+            Guid.NewGuid().ToString("D"),
+            Guid.NewGuid().ToString("D"));
+        var health = service.CreateResponse(
+            BridgeRoutes.Health,
+            Guid.NewGuid().ToString("D"),
+            Guid.NewGuid().ToString("D"));
+        using var capabilitiesJson = JsonDocument.Parse(JsonSerializer.Serialize(
+            capabilities,
+            CadJson.Options));
+        using var healthJson = JsonDocument.Parse(JsonSerializer.Serialize(
+            health,
+            CadJson.Options));
+        var inventory = capabilitiesJson.RootElement
+            .GetProperty("data")
+            .GetProperty("capabilities");
+
+        Assert.True(inventory.GetProperty("drawing.status").GetBoolean());
+        Assert.True(inventory.GetProperty("drawing.list_documents").GetBoolean());
+        Assert.False(inventory.GetProperty("drawing.active_document").GetBoolean());
+        Assert.False(inventory.GetProperty("drawing.units").GetBoolean());
+        Assert.False(inventory.GetProperty("drawing.bounds").GetBoolean());
+        Assert.False(inventory.GetProperty("drawing.layouts").GetBoolean());
+        Assert.False(inventory.GetProperty("drawing.system_metadata").GetBoolean());
+        Assert.True(inventory.GetProperty("dwg.read").GetBoolean());
+        Assert.True(healthJson.RootElement.GetProperty("data").GetProperty("dwgRead").GetBoolean());
+        Assert.False(
+            healthJson.RootElement.GetProperty("data").GetProperty("dwgWrite").GetBoolean());
     }
 
     [Fact]
@@ -378,6 +424,68 @@ public sealed class LoopbackBridgeServerTests
             (wrongMethod.StatusCode, wrongMethod.Status));
     }
 
+    [Fact]
+    public async Task DrawingInspectionPostUsesSameDispatcherAndStrictContract()
+    {
+        await using var fixture = await ServerFixture.StartAsync();
+        var request = new DrawingInspectRequest(
+            CadProtocol.SchemaVersion,
+            Guid.NewGuid().ToString("D"),
+            Guid.NewGuid().ToString("D"),
+            DateTimeOffset.UtcNow.AddSeconds(5),
+            fixture.Service.InstanceId,
+            DrawingOperation.Status,
+            ExpectedDocumentId: null);
+        var responseTask = fixture.SendJsonAsync(BridgeRoutes.DrawingInspect, request);
+        Assert.True(SpinWait.SpinUntil(
+            () => fixture.Dispatcher.GetSnapshot().QueueDepth == 1,
+            TimeSpan.FromSeconds(1)));
+        Assert.Equal(
+            DocumentDispatchTakeResult.Started,
+            fixture.Dispatcher.TryTakeNext(out var item));
+        Assert.NotNull(item);
+        Assert.Equal(DocumentDispatchScope.Application, item.Scope);
+        Assert.True(fixture.Dispatcher.Complete(
+            item,
+            CadResultEnvelope.Ok(
+                request.RequestId,
+                request.TraceId,
+                "AutoCAD drawing status inspected",
+                new DrawingStatusData(
+                    fixture.Service.InstanceId,
+                    item.DispatchId,
+                    request.Operation,
+                    MainThreadVerified: true,
+                    DrawingExecutionContext.ApplicationContext,
+                    ActiveDocumentId: null,
+                    QueueDelayMs: 0,
+                    ExecutionMs: 0,
+                    DrawingReadMode.ReadOnly,
+                    TransactionUsed: false,
+                    RuntimeState: "READY",
+                    DocumentState: "NO_ACTIVE_DOCUMENT",
+                    DocumentCount: 0))));
+
+        var response = await responseTask;
+        using var document = JsonDocument.Parse(response.Body);
+
+        Assert.Equal((200, "OK"), (response.StatusCode, response.Status));
+        Assert.Equal(request.RequestId, document.RootElement.GetProperty("requestId").GetString());
+        Assert.Equal(
+            "status",
+            document.RootElement.GetProperty("data").GetProperty("operation").GetString());
+
+        var invalid = JsonSerializer.Serialize(request, CadJson.Options)[..^1]
+            + ",\"arguments\":{}}";
+        var invalidResponse = await fixture.SendJsonAsync(BridgeRoutes.DrawingInspect, invalid);
+        var wrongMethod = await fixture.SendAsync(
+            "GET",
+            BridgeRoutes.DrawingInspect,
+            fixture.Token);
+        Assert.Equal("INVALID_ARGUMENT", invalidResponse.Status);
+        Assert.Equal("METHOD_NOT_ALLOWED", wrongMethod.Status);
+    }
+
     private static LoopbackBridgeServer CreateServer(
         int port,
         BridgeTokenCredential credential,
@@ -385,8 +493,8 @@ public sealed class LoopbackBridgeServerTests
         out DocumentContextDispatcher dispatcher,
         LoopbackBridgeLimits? limits = null)
     {
-        service = CreateResponseService(BridgePluginState.Listening);
         dispatcher = new DocumentContextDispatcher();
+        service = CreateResponseService(BridgePluginState.Listening, dispatcher);
         dispatcher.ConfigureInstance(service.InstanceId);
         dispatcher.MarkReady(activeDocumentExists: true, documentIsQuiescent: true);
         return new LoopbackBridgeServer(
@@ -397,7 +505,8 @@ public sealed class LoopbackBridgeServerTests
     }
 
     private static BridgeInstanceResponseService CreateResponseService(
-        BridgePluginState state) =>
+        BridgePluginState state,
+        IBridgeContextStateProvider? contextStateProvider = null) =>
         new(
             new BridgeInstanceMetadata(
                 "CadMax.AutoCAD.Bridge",
@@ -408,7 +517,8 @@ public sealed class LoopbackBridgeServerTests
                 "net8.0-windows",
                 IsAutoCADHostProcess: true,
                 DevelopmentHost: false),
-            state);
+            state,
+            contextStateProvider);
 
     private static int FindFreePort()
     {

@@ -9,15 +9,18 @@ from uuid import UUID
 from cad_max_mcp import SCHEMA_VERSION, SERVER_NAME, __version__
 from cad_max_mcp.backends import CadBackend
 from cad_max_mcp.config import CadMaxSettings
+from cad_max_mcp.models.drawing import DrawingOperation
 from cad_max_mcp.models.envelope import ResultEnvelope
 
 SystemOperation = Literal["health", "version", "capabilities"]
+
+DRAWING_CAPABILITIES = tuple(f"drawing.{operation.value}" for operation in DrawingOperation)
 
 IMPLEMENTED_CAPABILITIES = (
     "cad_system.health",
     "cad_system.version",
     "cad_system.capabilities",
-    "drawing.status",
+    *DRAWING_CAPABILITIES,
 )
 DEFERRED_CAPABILITIES = (
     "selection",

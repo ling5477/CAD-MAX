@@ -202,6 +202,21 @@ public sealed class DocumentDispatchWorkItem
     internal DocumentDispatchWorkItem(ContextProbeRequest request)
     {
         Request = request;
+        Scope = DocumentDispatchScope.Document;
+        DispatchId = Guid.NewGuid().ToString("D");
+        EnqueuedTimestamp = Stopwatch.GetTimestamp();
+        Completion = new TaskCompletionSource<CadResultEnvelope>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    internal DocumentDispatchWorkItem(
+        ContextProbeRequest request,
+        DrawingInspectRequest drawingRequest,
+        DocumentDispatchScope scope)
+    {
+        Request = request;
+        DrawingRequest = drawingRequest;
+        Scope = scope;
         DispatchId = Guid.NewGuid().ToString("D");
         EnqueuedTimestamp = Stopwatch.GetTimestamp();
         Completion = new TaskCompletionSource<CadResultEnvelope>(
@@ -209,6 +224,10 @@ public sealed class DocumentDispatchWorkItem
     }
 
     public ContextProbeRequest Request { get; }
+
+    public DrawingInspectRequest? DrawingRequest { get; }
+
+    public DocumentDispatchScope Scope { get; }
 
     public string DispatchId { get; }
 
@@ -234,6 +253,12 @@ public sealed class DocumentDispatchWorkItem
 
     internal void RequestCancellation() =>
         Interlocked.Exchange(ref cancellationRequested, 1);
+}
+
+public enum DocumentDispatchScope
+{
+    Application,
+    Document,
 }
 
 /// <summary>
@@ -373,6 +398,45 @@ public sealed class DocumentContextDispatcher : IBridgeContextStateProvider, IDi
             return Task.FromResult(CreateFailure(request, validationFailure.Value));
         }
 
+        return EnqueueValidated(
+            request,
+            drawingRequest: null,
+            DocumentDispatchScope.Document,
+            cancellationToken);
+    }
+
+    /// <summary>Validate and admit a drawing inspection into the same bounded FIFO queue.</summary>
+    public Task<CadResultEnvelope> EnqueueDrawingAsync(
+        DrawingInspectRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var now = timeProvider.GetUtcNow();
+        var validationFailure = DrawingInspectRequestValidator.Validate(request, now);
+        if (validationFailure is not null)
+        {
+            return Task.FromResult(CreateFailure(request, validationFailure.Value));
+        }
+
+        var commonRequest = new ContextProbeRequest(
+            request.SchemaVersion,
+            request.RequestId,
+            request.TraceId,
+            request.DeadlineUtc,
+            request.ExpectedInstanceId,
+            request.ExpectedDocumentId);
+        var scope = request.Operation is DrawingOperation.Status or DrawingOperation.ListDocuments
+            ? DocumentDispatchScope.Application
+            : DocumentDispatchScope.Document;
+        return EnqueueValidated(commonRequest, request, scope, cancellationToken);
+    }
+
+    private Task<CadResultEnvelope> EnqueueValidated(
+        ContextProbeRequest request,
+        DrawingInspectRequest? drawingRequest,
+        DocumentDispatchScope scope,
+        CancellationToken cancellationToken)
+    {
         DocumentDispatchWorkItem item;
         CadStatus? admissionFailure = null;
         lock (syncRoot)
@@ -396,11 +460,11 @@ public sealed class DocumentContextDispatcher : IBridgeContextStateProvider, IDi
             {
                 admissionFailure = CadStatus.ApplicationModal;
             }
-            else if (!hasActiveDocument)
+            else if (scope == DocumentDispatchScope.Document && !hasActiveDocument)
             {
                 admissionFailure = CadStatus.NoActiveDocument;
             }
-            else if (!isQuiescent)
+            else if (scope == DocumentDispatchScope.Document && !isQuiescent)
             {
                 admissionFailure = CadStatus.DocumentBusy;
             }
@@ -416,7 +480,9 @@ public sealed class DocumentContextDispatcher : IBridgeContextStateProvider, IDi
                 return Task.FromResult(CreateFailure(request, admissionFailure.Value));
             }
 
-            item = new DocumentDispatchWorkItem(request);
+            item = drawingRequest is null
+                ? new DocumentDispatchWorkItem(request)
+                : new DocumentDispatchWorkItem(request, drawingRequest, scope);
             item.QueueNode = queue.AddLast(item);
             contextRevision++;
         }
@@ -592,6 +658,17 @@ public sealed class DocumentContextDispatcher : IBridgeContextStateProvider, IDi
             SafeMessage(status),
             durationMs: durationMs);
 
+    internal static CadResultEnvelope CreateFailure(
+        DrawingInspectRequest request,
+        CadStatus status,
+        long durationMs = 0) =>
+        CadResultEnvelope.Failure(
+            SafeRequestId(request.RequestId),
+            SafeTraceId(request.TraceId),
+            status,
+            SafeMessage(status, drawingInspection: true),
+            durationMs: durationMs);
+
     private async Task MonitorAsync(
         DocumentDispatchWorkItem item,
         CancellationToken callerCancellation)
@@ -672,8 +749,20 @@ public sealed class DocumentContextDispatcher : IBridgeContextStateProvider, IDi
             return false;
         }
 
-        item.DeadlineMonitorCancellation.Cancel();
-        return item.Completion.TrySetResult(result);
+        // A deadline monitor can finish and dispose its CTS between TryMarkCompleted and
+        // this path. Complete the request first so that this cleanup race cannot strand a
+        // listener task; the monitor cancellation is only best-effort cleanup.
+        var completionSet = item.Completion.TrySetResult(result);
+        try
+        {
+            item.DeadlineMonitorCancellation.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The monitor has already observed normal completion and disposed its CTS.
+        }
+
+        return completionSet;
     }
 
     private static void CompleteAll(
@@ -707,9 +796,11 @@ public sealed class DocumentContextDispatcher : IBridgeContextStateProvider, IDi
             ? value
             : Guid.NewGuid().ToString("D");
 
-    private static string SafeMessage(CadStatus status) => status switch
+    private static string SafeMessage(CadStatus status, bool drawingInspection = false) => status switch
     {
-        CadStatus.Cancelled => "CAD-MAX context probe was cancelled",
+        CadStatus.Cancelled => drawingInspection
+            ? "CAD-MAX drawing inspection was cancelled"
+            : "CAD-MAX context probe was cancelled",
         CadStatus.DispatcherNotReady => "CAD-MAX context dispatcher is not ready",
         CadStatus.InstanceMismatch => "CAD-MAX AutoCAD instance does not match",
         CadStatus.NoActiveDocument => "AutoCAD has no active document",
@@ -719,7 +810,12 @@ public sealed class DocumentContextDispatcher : IBridgeContextStateProvider, IDi
         CadStatus.ApplicationModal => "AutoCAD is in a modal state",
         CadStatus.DocumentBusy => "The active AutoCAD document is busy",
         CadStatus.QueueFull => "CAD-MAX context dispatch queue is full",
-        CadStatus.Timeout => "CAD-MAX context probe timed out",
+        CadStatus.Timeout => drawingInspection
+            ? "CAD-MAX drawing inspection timed out"
+            : "CAD-MAX context probe timed out",
+        CadStatus.ResultLimitExceeded => "CAD-MAX drawing inspection result limit was exceeded",
+        CadStatus.AutocadDataInvalid => "AutoCAD drawing data is invalid",
+        CadStatus.AutocadApiError => "AutoCAD read-only inspection failed",
         CadStatus.MainThreadDispatchFailed => "AutoCAD main-thread dispatch failed",
         CadStatus.CommandContextFailed => "AutoCAD document command-context dispatch failed",
         CadStatus.BridgeStopping => "CAD-MAX AutoCAD bridge is stopping",
@@ -766,4 +862,34 @@ internal static partial class ContextProbeRequestValidator
 
     internal static bool IsSafeTraceId(string? value) =>
         value is not null && SafeTraceRegex().IsMatch(value);
+}
+
+internal static class DrawingInspectRequestValidator
+{
+    internal static CadStatus? Validate(DrawingInspectRequest request, DateTimeOffset now)
+    {
+        var commonFailure = ContextProbeRequestValidator.Validate(
+            new ContextProbeRequest(
+                request.SchemaVersion,
+                request.RequestId,
+                request.TraceId,
+                request.DeadlineUtc,
+                request.ExpectedInstanceId,
+                request.ExpectedDocumentId),
+            now);
+        if (commonFailure is not null)
+        {
+            return commonFailure;
+        }
+
+        if (request.Operation is DrawingOperation.Status or DrawingOperation.ListDocuments
+            && request.ExpectedDocumentId is not null)
+        {
+            return CadStatus.InvalidArgument;
+        }
+
+        return Enum.IsDefined(request.Operation)
+            ? null
+            : CadStatus.InvalidArgument;
+    }
 }

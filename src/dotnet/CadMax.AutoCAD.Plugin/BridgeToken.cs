@@ -4,6 +4,8 @@ using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Win32.SafeHandles;
+using System.Runtime.InteropServices;
 
 namespace CadMax.AutoCAD.Plugin;
 
@@ -170,33 +172,53 @@ public sealed class FileBridgeTokenSource : IBridgeTokenSource
 
     public BridgeTokenLoadResult Load()
     {
-        if (!File.Exists(tokenFilePath))
+        if (!OperatingSystem.IsWindows())
         {
-            return BridgeTokenLoadResult.Failure("TOKEN_NOT_CONFIGURED");
+            return BridgeTokenLoadResult.Failure("TOKEN_FILE_INSECURE");
         }
 
         try
         {
-            var file = new FileInfo(tokenFilePath);
-            if (file.Length is <= 0 or > MaximumTokenFileBytes)
-            {
-                return BridgeTokenLoadResult.Failure("TOKEN_CONFIG_INVALID");
-            }
-
-            if (!HasSecureWindowsAcl(file))
+            // Open one reparse-resistant handle before inspecting ownership, DACL, identity, or
+            // content. Never re-resolve the pathname after this point: otherwise an attacker able
+            // to replace the path between validation and read could select the listener credential.
+            using var stream = OpenReadHandle();
+            if (!TryGetSafeOpenedFileInformation(stream.SafeFileHandle, out var before)
+                || !HasSecureWindowsAcl(stream))
             {
                 return BridgeTokenLoadResult.Failure("TOKEN_FILE_INSECURE");
             }
 
-            var bytes = File.ReadAllBytes(tokenFilePath);
+            var byteCount = GetFileSize(before);
+            if (byteCount is 0 or > MaximumTokenFileBytes)
+            {
+                return BridgeTokenLoadResult.Failure("TOKEN_CONFIG_INVALID");
+            }
+
+            var bytes = GC.AllocateUninitializedArray<byte>((int)byteCount);
             try
             {
+                stream.ReadExactly(bytes);
+                if (!TryGetSafeOpenedFileInformation(stream.SafeFileHandle, out var after)
+                    || !SameOpenedFile(before, after))
+                {
+                    return BridgeTokenLoadResult.Failure("TOKEN_FILE_INSECURE");
+                }
+
                 return Parse(bytes);
+            }
+            catch (EndOfStreamException)
+            {
+                return BridgeTokenLoadResult.Failure("TOKEN_FILE_INSECURE");
             }
             finally
             {
                 CryptographicOperations.ZeroMemory(bytes);
             }
+        }
+        catch (FileNotFoundException)
+        {
+            return BridgeTokenLoadResult.Failure("TOKEN_NOT_CONFIGURED");
         }
         catch (UnauthorizedAccessException)
         {
@@ -209,6 +231,39 @@ public sealed class FileBridgeTokenSource : IBridgeTokenSource
         catch (SystemException)
         {
             return BridgeTokenLoadResult.Failure("TOKEN_UNAVAILABLE");
+        }
+    }
+
+    private FileStream OpenReadHandle()
+    {
+        var handle = CreateFile(
+            tokenFilePath,
+            GenericRead | ReadControl,
+            FileShare.Read,
+            IntPtr.Zero,
+            OpenExisting,
+            FileFlagOpenReparsePoint,
+            IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            var errorCode = Marshal.GetLastWin32Error();
+            handle.Dispose();
+            if (errorCode is FileNotFoundError or PathNotFoundError)
+            {
+                throw new FileNotFoundException();
+            }
+
+            throw new IOException();
+        }
+
+        try
+        {
+            return new FileStream(handle, FileAccess.Read, MaximumTokenFileBytes, isAsync: false);
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
         }
     }
 
@@ -262,7 +317,7 @@ public sealed class FileBridgeTokenSource : IBridgeTokenSource
         }
     }
 
-    private static bool HasSecureWindowsAcl(FileInfo file)
+    private static bool HasSecureWindowsAcl(FileStream stream)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -276,10 +331,10 @@ public sealed class FileBridgeTokenSource : IBridgeTokenSource
         }
 
         var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
-        var security = file.GetAccessControl(AccessControlSections.Access | AccessControlSections.Owner);
+        var security = FileSystemAclExtensions.GetAccessControl(stream);
         if (!security.AreAccessRulesProtected
             || security.GetOwner(typeof(SecurityIdentifier)) is not SecurityIdentifier owner
-            || (!owner.Equals(currentUser) && !owner.Equals(system)))
+            || !owner.Equals(currentUser))
         {
             return false;
         }
@@ -316,7 +371,7 @@ public sealed class FileBridgeTokenSource : IBridgeTokenSource
             {
                 systemAllowed |= grantsRead;
             }
-            else if (grantsRead || grantsWrite)
+            else if (rule.FileSystemRights != 0)
             {
                 return false;
             }
@@ -324,4 +379,80 @@ public sealed class FileBridgeTokenSource : IBridgeTokenSource
 
         return currentUserCanRead && currentUserCanWrite && systemAllowed;
     }
+
+    private static bool TryGetSafeOpenedFileInformation(
+        SafeFileHandle handle,
+        out ByHandleFileInformation information)
+    {
+        if (!GetFileInformationByHandle(handle, out information))
+        {
+            return false;
+        }
+
+        return information.NumberOfLinks == 1
+            && (information.FileAttributes & (FileAttributeDirectory | FileAttributeReparsePoint)) == 0;
+    }
+
+    private static ulong GetFileSize(ByHandleFileInformation information) =>
+        ((ulong)information.FileSizeHigh << 32) | information.FileSizeLow;
+
+    private static bool SameOpenedFile(
+        ByHandleFileInformation before,
+        ByHandleFileInformation after) =>
+        before.FileAttributes == after.FileAttributes
+        && before.VolumeSerialNumber == after.VolumeSerialNumber
+        && before.FileIndexHigh == after.FileIndexHigh
+        && before.FileIndexLow == after.FileIndexLow
+        && before.LastWriteTime.LowDateTime == after.LastWriteTime.LowDateTime
+        && before.LastWriteTime.HighDateTime == after.LastWriteTime.HighDateTime
+        && before.FileSizeHigh == after.FileSizeHigh
+        && before.FileSizeLow == after.FileSizeLow
+        && before.NumberOfLinks == after.NumberOfLinks;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFile(
+        string fileName,
+        uint desiredAccess,
+        FileShare shareMode,
+        IntPtr securityAttributes,
+        uint creationDisposition,
+        uint flagsAndAttributes,
+        IntPtr templateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandle(
+        SafeFileHandle handle,
+        out ByHandleFileInformation information);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileTime
+    {
+        public uint LowDateTime;
+        public uint HighDateTime;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ByHandleFileInformation
+    {
+        public uint FileAttributes;
+        public FileTime CreationTime;
+        public FileTime LastAccessTime;
+        public FileTime LastWriteTime;
+        public uint VolumeSerialNumber;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint NumberOfLinks;
+        public uint FileIndexHigh;
+        public uint FileIndexLow;
+    }
+
+    private const uint GenericRead = 0x80000000;
+    private const uint ReadControl = 0x00020000;
+    private const uint OpenExisting = 3;
+    private const uint FileFlagOpenReparsePoint = 0x00200000;
+    private const uint FileAttributeDirectory = 0x00000010;
+    private const uint FileAttributeReparsePoint = 0x00000400;
+    private const int FileNotFoundError = 2;
+    private const int PathNotFoundError = 3;
 }

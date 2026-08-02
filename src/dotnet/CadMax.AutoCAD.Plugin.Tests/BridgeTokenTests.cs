@@ -74,6 +74,23 @@ public sealed class BridgeTokenTests : IDisposable
     }
 
     [Fact]
+    public void NonAllowlistedControlRightsFailClosed()
+    {
+        var path = WriteTokenFile(CreateToken());
+        var file = new FileInfo(path);
+        var security = file.GetAccessControl();
+        security.AddAccessRule(new FileSystemAccessRule(
+            new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
+            FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership,
+            AccessControlType.Allow));
+        file.SetAccessControl(security);
+
+        var result = new FileBridgeTokenSource(path).Load();
+
+        Assert.Equal("TOKEN_FILE_INSECURE", result.SafeErrorCode);
+    }
+
+    [Fact]
     public void BearerValidationRejectsMissingWrongAndMalformedValues()
     {
         var token = CreateToken();

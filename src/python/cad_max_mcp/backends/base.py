@@ -7,6 +7,7 @@ from typing import Protocol
 from uuid import UUID
 
 from cad_max_mcp.models.bridge import BridgeConnectionState
+from cad_max_mcp.models.drawing import DrawingOperation
 from cad_max_mcp.models.envelope import ResultEnvelope, Status
 
 
@@ -35,6 +36,18 @@ class CadBackend(Protocol):
 
     async def drawing_status(self, request_id: UUID, trace_id: UUID) -> ResultEnvelope:
         """Return real drawing status or an explicit fail-closed result."""
+        ...
+
+    async def drawing_inspect(
+        self,
+        operation: DrawingOperation,
+        *,
+        expected_document_id: str | None,
+        deadline_ms: int,
+        request_id: UUID,
+        trace_id: UUID,
+    ) -> ResultEnvelope:
+        """Execute one strict read-only drawing inspection operation."""
         ...
 
     async def bridge_system(self, operation: str) -> ResultEnvelope:

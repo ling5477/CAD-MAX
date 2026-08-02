@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -419,8 +420,11 @@ async def test_official_v2_client_uses_discover_and_legacy_initialize(tmp_path: 
 
 
 async def test_stdio_2026_requests_need_no_initialize_and_survive_restart() -> None:
+    console_script = Path(sys.executable).with_name(
+        "cad-max-mcp.exe" if os.name == "nt" else "cad-max-mcp"
+    )
     parameters = StdioServerParameters(
-        command=str((Path.cwd() / ".venv" / "Scripts" / "cad-max-mcp.exe").resolve()),
+        command=str(console_script),
         args=["serve", "--transport", "stdio"],
         cwd=str(Path.cwd()),
         env=dict(os.environ),

@@ -64,3 +64,16 @@
 - Evidence：confirmed official `MCPServer` v2 API 与 locked `mcp 2.0.0` signature 一致；modern/legacy 共用 auth、middleware、tool handler与output schema；explicit handle chain 移除 `_document_id` correctness dependency；C# null-selector guard 位于 queue admission 前；未发现 Phase 1.5、entity/layer/block/selection/preview、write/script、COM/AutoLISP/command-string 混入。
 - Review execution：独立 Python full test `89/89` PASS。reviewer 未独立重跑 .NET/docs/AutoCAD smoke 或 post-commit CI；这些仍必须由本轮已记录 validation 与后续 exact-head CI 共同证明。
 - Known limitation：P3-2 Python→Bridge bearer server identity 继续 OPEN；CodeRabbit CLI 在当前 environment 不可用，reviewer 采用人工 source/diff review，不将其表述为 CodeRabbit result。
+
+## 2026-08-02 / Candidate CI failure and focused repair
+
+- Candidate `0ba282344013eda44268b307013f6f184d5cc6be` exact-head CI run `30755919741`：Governance=success、.NET 8=success、Python 3.12=failure，因此状态为 `COMMITTED|CI_FAILED|FIX_REQUIRED`，不得以部分成功接受 batch。
+- RCA：only failing test 为 `test_stdio_2026_requests_need_no_initialize_and_survive_restart`。test hard-coded Windows console-script path `.venv/Scripts/cad-max-mcp.exe`；Linux CI console script 位于 current Python interpreter sibling `bin/cad-max-mcp`，导致 `FileNotFoundError`，不是 MCP protocol、auth、sessionless behavior或product runtime failure。
+- Minimal fix：stdio test 由 `sys.executable` sibling resolve console script；Windows 使用 `cad-max-mcp.exe`，non-Windows 使用 `cad-max-mcp`。仍实际启动 console script/subprocess 和 official v2 client，不降级为 mock。
+- Local fix verification：focused restart test PASS；Ruff check/format PASS；Python full suite `89/89` PASS。待 focused independent review、re-stage、fix commit、push后重新以 new exact HEAD 验证 CI。
+
+## 2026-08-02 / Candidate CI repair review and revalidation
+
+- Focused independent review：PASS，P0=`0`、P1=`0`、P2=`0`、P3=`0`。Windows resolves the console script beside `<venv>\\Scripts\\python.exe`; Linux/macOS resolves it beside `<venv>/bin/python`。test continues to spawn the real subprocess twice through official `stdio_client` and assert restart/discover/tools/list/call behavior；no test weakening。
+- Revalidation：focused restart test PASS；Ruff check/format PASS；`scripts/verify.ps1` PASS。Python `89/89`、Contracts `6/6`、Bridge Core `13/13`、AutoCAD Plugin `90/90`；build `0 warnings / 0 errors`；doctor confirms read-only/write/script/loopback defaults；docs governance and AutoCAD script safety checks PASS。
+- Next state：`REVIEW_ACCEPTED|READY_TO_COMMIT`。将以独立 fix commit 推送 `dev`，并只接受该 new exact HEAD 的 Governance、Python 3.12、.NET 8 all-success CI。

@@ -135,3 +135,22 @@
   `dwg_read/dwg_write=NOT_IMPLEMENTED`、read-only enabled、write/script disabled、loopback-only 全部保持。
 - Closeout commit SHA 与 exact-head CI 在本文成文时尚不存在；完成后只在最终报告记录，不创建第三个
   纯 attestation commit。
+
+## 2026-08-02 / CADMAX-PHASE1-4-READONLY-DOCUMENT-INSPECTION closeout
+
+- 已接受 allowlisted runtime/document list、active document、units、bounds、layouts 与 system metadata
+  inspection；未实现 entity/layer/block/style/selection enumeration、DWG mutation 或 write/script。
+- AutoCAD 2025/2026 真实 full matrix 均 PASS；DBMOD 与 DWG SHA-256 unchanged、path sentinel absent、
+  final queue/in-flight 均为 `0`，并由用户通过 UI close without save。
+- 完整 security diff scan `5e6e5fe6-2014-42a3-b9c4-8f1f73b81030` 为
+  `P0=0 / P1=0 / P2=0 / P3=1`；token ACL 已关闭，bearer server identity limitation 明确记录为启用
+  write/script 前 blocker，child-output P3 已修复并完成聚焦验证。
+- 最终 candidate `e62fded92df1064ffbd82b75cc910a568eb9fc7b` 的 exact-head CI run
+  `30741291154` 中 Governance、Python 3.12、.NET 8 全绿；初始 candidate 的 Linux mypy 失败历史保留。
+- 本次 docs-only closeout 接受 `PHASE_1_4_READONLY_DOCUMENT_INSPECTION / ACCEPTED|CI_GREEN`，初始化
+  `PHASE_1_5_READONLY_OBJECT_INSPECTION / NOT_STARTED`；唯一下一动作是
+  `IMPLEMENT_PHASE_1_5_READONLY_OBJECT_INSPECTION`，本任务不启动 Phase 1.5 实现。
+- `dwg_read=IMPLEMENTED` 仅指已接受的 Phase 1.4 document metadata inspection；DWG write 仍未实现，
+  read-only enabled、write/script disabled 与 loopback-only 安全默认值不变。
+- Closeout commit SHA 与 exact-head CI 在本文成文时尚不存在；完成后只在最终报告记录，不创建第三个
+  纯 attestation commit。

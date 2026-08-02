@@ -141,3 +141,18 @@ attempt 的最新结论。所有值均为脱敏状态、布尔值或计数，不
   handle lifetime、read bounds、错误码或 credential comparison。
 - CI-fix verification：Linux-target mypy `PASS`；Ruff/format `PASS`；token tests `5/5 PASS`；统一
   `scripts/verify.ps1` 再次 `PASS`。后续 candidate commit 与 exact-head CI 另行记录。
+
+## Final candidate acceptance and closeout / 2026-08-02
+
+- 最终 candidate `e62fded92df1064ffbd82b75cc910a568eb9fc7b` 已 push，且
+  `HEAD == origin/dev`；它包含 implementation commit `9f2a4c48b60857ca720e8a4bacbc64506b55b76e`
+  与上述 portable Windows token API type fix。
+- Exact-head CI run `30741291154` 为 `completed / success`；head SHA 精确匹配最终 candidate。Jobs：
+  Governance `91479097564`、Python 3.12 `91479097594`、.NET 8 `91479097579` 全部 success。
+- Docs-only closeout 接受 `PHASE_1_4_READONLY_DOCUMENT_INSPECTION / ACCEPTED|CI_GREEN`，初始化
+  `PHASE_1_5_READONLY_OBJECT_INSPECTION / NOT_STARTED`，唯一下一动作推进到
+  `IMPLEMENT_PHASE_1_5_READONLY_OBJECT_INSPECTION`；本次不启动 Phase 1.5 实现。
+- `dwg_read=IMPLEMENTED` 仅表示已接受 Phase 1.4 allowlisted document metadata inspection；
+  `dwg_write=NOT_IMPLEMENTED`、read-only enabled、write/script disabled 与 loopback-only 保持。
+- Closeout commit SHA 与 exact-head CI 在本段成文时尚不存在；其结果只在最终交付记录，不创建第三个
+  纯 attestation commit。

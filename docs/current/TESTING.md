@@ -150,3 +150,23 @@
   acceptance。
 - 本条所在 docs-only closeout commit 在成文时尚未创建；其 exact-head CI 必须独立全绿，不得以
   candidate run `29934893298` 代替。
+
+## 2026-08-02 / Phase 1.4 readonly document inspection candidate acceptance
+
+- 初始 implementation candidate `9f2a4c48b60857ca720e8a4bacbc64506b55b76e` 的 exact-head CI run
+  `30741112632` 中 Governance 与 .NET 8 success，Python 3.12 因 POSIX mypy 不识别 Windows-only
+  `ctypes` symbols 而 failure；失败历史保留。
+- 最小 portable type adapter 修复后的最终 candidate `e62fded92df1064ffbd82b75cc910a568eb9fc7b`
+  已 push；exact-head CI run `30741291154` 为 `completed / success`。Jobs：Governance
+  `91479097564`、Python 3.12 `91479097594`、.NET 8 `91479097579` 全部 success。
+- 本地 `scripts/verify.ps1` PASS：Python `78/78`、Contracts `6/6`、Bridge Core `13/13`、Plugin
+  `85/85`、AutoCAD script safety `29/29`、Release build `0 warnings / 0 errors`，Ruff、format、mypy、
+  doctor 与 docs governance 全部通过。
+- AutoCAD 2025/2026 full readonly matrix 均 PASS；DBMOD unchanged、DWG SHA-256 unchanged、path
+  sentinel absent、final queue/in-flight 均为 `0`，且均通过 UI close without save。证据仅保留脱敏状态、
+  计数与 hash 对比结果。
+- 完整 working-tree security diff scan `5e6e5fe6-2014-42a3-b9c4-8f1f73b81030` 已 complete：
+  `P0=0 / P1=0 / P2=0 / P3=1`。Token ACL 为 `CLOSED`；bearer server identity limitation 明确保留为
+  `DOCUMENTED`，在 write/script 前必须关闭；新增 child-output P3 已修复并由聚焦验证闭合。
+- 本条所在 docs-only closeout commit 在成文时尚未创建；其 exact-head CI 必须独立全绿，不得以
+  candidate run `30741291154` 代替。

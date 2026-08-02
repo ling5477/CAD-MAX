@@ -52,13 +52,14 @@ class NullCadBackend:
         self,
         operation: DrawingOperation,
         *,
+        expected_instance_id: UUID | None,
         expected_document_id: str | None,
         deadline_ms: int,
         request_id: UUID,
         trace_id: UUID,
     ) -> ResultEnvelope:
         """Never fabricate drawing data when no bridge is configured."""
-        del operation, expected_document_id, deadline_ms
+        del operation, expected_instance_id, expected_document_id, deadline_ms
         return await self.drawing_status(request_id, trace_id)
 
     def capabilities(self) -> list[str]:

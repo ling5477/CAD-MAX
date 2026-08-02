@@ -272,10 +272,28 @@ public sealed class DocumentContextDispatcherTests
         dispatcher.MarkReady(activeDocumentExists: false, documentIsQuiescent: false);
 
         var result = await dispatcher.EnqueueDrawingAsync(
-            CreateDrawingRequest(DrawingOperation.Units),
+            CreateDrawingRequest(DrawingOperation.ActiveDocument),
             CancellationToken.None);
 
         Assert.Equal(CadStatus.NoActiveDocument, result.Status);
+        Assert.Equal(0, dispatcher.GetSnapshot().QueueDepth);
+    }
+
+    [Theory]
+    [InlineData(DrawingOperation.Units)]
+    [InlineData(DrawingOperation.Bounds)]
+    [InlineData(DrawingOperation.Layouts)]
+    [InlineData(DrawingOperation.SystemMetadata)]
+    public async Task DocumentMetadataOperationRejectsMissingDocumentSelector(
+        DrawingOperation operation)
+    {
+        using var dispatcher = CreateReadyDispatcher();
+
+        var result = await dispatcher.EnqueueDrawingAsync(
+            CreateDrawingRequest(operation),
+            CancellationToken.None);
+
+        Assert.Equal(CadStatus.InvalidArgument, result.Status);
         Assert.Equal(0, dispatcher.GetSnapshot().QueueDepth);
     }
 

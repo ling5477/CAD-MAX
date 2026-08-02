@@ -18,7 +18,7 @@ from cad_max_mcp.backends.autocad_bridge import (
     EXPECTED_TRUE_CAPABILITIES,
     REQUIRED_FALSE_CAPABILITIES,
 )
-from cad_max_mcp.models import BridgeConnectionState, Status
+from cad_max_mcp.models import BridgeConnectionState, ResultEnvelope, Status
 from cad_max_mcp.models.drawing import DrawingOperation
 from token_file_helpers import write_secure_token_file
 
@@ -534,15 +534,21 @@ async def test_context_probe_and_doctor_verify_stable_document_context(tmp_path:
 
 async def test_drawing_operations_and_doctor_are_strict_and_redacted(tmp_path: Path) -> None:
     token_file, token = write_token_file(tmp_path)
+    instance_id = uuid4()
     backend = AutoCadBridgeBackend(
         "http://127.0.0.1:47770",
         token_file,
-        transport=httpx.MockTransport(working_handler(token)),
+        transport=httpx.MockTransport(working_handler(token, instance_id=instance_id)),
     )
 
     for operation in DrawingOperation:
         result = await backend.drawing_inspect(
             operation,
+            expected_instance_id=(
+                None
+                if operation in {DrawingOperation.STATUS, DrawingOperation.LIST_DOCUMENTS}
+                else instance_id
+            ),
             expected_document_id=(
                 None
                 if operation in {DrawingOperation.STATUS, DrawingOperation.LIST_DOCUMENTS}
@@ -655,6 +661,7 @@ async def test_drawing_rejects_path_leakage_and_does_not_retry_busy(tmp_path: Pa
     )
     busy = await backend.drawing_inspect(
         DrawingOperation.ACTIVE_DOCUMENT,
+        expected_instance_id=instance_id,
         expected_document_id=None,
         deadline_ms=5000,
         request_id=uuid4(),
@@ -662,6 +669,7 @@ async def test_drawing_rejects_path_leakage_and_does_not_retry_busy(tmp_path: Pa
     )
     leaked = await backend.drawing_inspect(
         DrawingOperation.ACTIVE_DOCUMENT,
+        expected_instance_id=instance_id,
         expected_document_id=None,
         deadline_ms=5000,
         request_id=uuid4(),
@@ -861,7 +869,8 @@ async def test_bridge_rejects_nonfinite_json_numbers_before_schema_validation(
 
     result = await backend.drawing_inspect(
         DrawingOperation.BOUNDS,
-        expected_document_id=None,
+        expected_instance_id=instance_id,
+        expected_document_id="doc_AAAAAAAAAAAAAAAAAAAAAA",
         deadline_ms=5000,
         request_id=uuid4(),
         trace_id=uuid4(),
@@ -981,6 +990,7 @@ async def test_drawing_response_identity_must_bind_to_requested_context(
 
     result = await backend.drawing_inspect(
         DrawingOperation.ACTIVE_DOCUMENT,
+        expected_instance_id=expected_instance,
         expected_document_id="doc_AAAAAAAAAAAAAAAAAAAAAA",
         deadline_ms=5000,
         request_id=uuid4(),
@@ -989,3 +999,80 @@ async def test_drawing_response_identity_must_bind_to_requested_context(
 
     assert result.status is Status.SCHEMA_MISMATCH
     assert backend.connection_state is BridgeConnectionState.INCOMPATIBLE
+
+
+async def test_drawing_document_operations_require_request_scoped_handles(
+    tmp_path: Path,
+) -> None:
+    token_file, token = write_token_file(tmp_path)
+    active_instance = uuid4()
+    requests: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        return httpx.Response(
+            200,
+            json=envelope(endpoint_data(request.url.path, instance_id=active_instance)),
+        )
+
+    backend = AutoCadBridgeBackend(
+        "http://127.0.0.1:47770",
+        token_file,
+        transport=httpx.MockTransport(handle),
+    )
+    missing = await backend.drawing_inspect(
+        DrawingOperation.UNITS,
+        expected_instance_id=None,
+        expected_document_id=None,
+        deadline_ms=5000,
+        request_id=uuid4(),
+        trace_id=uuid4(),
+    )
+    document_on_application_call = await backend.drawing_inspect(
+        DrawingOperation.STATUS,
+        expected_instance_id=None,
+        expected_document_id="doc_AAAAAAAAAAAAAAAAAAAAAA",
+        deadline_ms=5000,
+        request_id=uuid4(),
+        trace_id=uuid4(),
+    )
+    stale_instance = await backend.drawing_inspect(
+        DrawingOperation.ACTIVE_DOCUMENT,
+        expected_instance_id=uuid4(),
+        expected_document_id=None,
+        deadline_ms=5000,
+        request_id=uuid4(),
+        trace_id=uuid4(),
+    )
+
+    assert missing.status is Status.INVALID_ARGUMENT
+    assert document_on_application_call.status is Status.INVALID_ARGUMENT
+    assert stale_instance.status is Status.INSTANCE_MISMATCH
+    assert requests == ["/v1/health"]
+    assert token not in " ".join(result.message for result in (missing, stale_instance))
+
+
+async def test_explicit_handles_remain_valid_after_backend_restart(tmp_path: Path) -> None:
+    token_file, token = write_token_file(tmp_path)
+    instance_id = uuid4()
+    transport = httpx.MockTransport(working_handler(token, instance_id=instance_id))
+
+    async def inspect(backend: AutoCadBridgeBackend) -> ResultEnvelope:
+        return await backend.drawing_inspect(
+            DrawingOperation.UNITS,
+            expected_instance_id=instance_id,
+            expected_document_id="doc_AAAAAAAAAAAAAAAAAAAAAA",
+            deadline_ms=5000,
+            request_id=uuid4(),
+            trace_id=uuid4(),
+        )
+
+    first = await inspect(
+        AutoCadBridgeBackend("http://127.0.0.1:47770", token_file, transport=transport)
+    )
+    restarted = await inspect(
+        AutoCadBridgeBackend("http://127.0.0.1:47770", token_file, transport=transport)
+    )
+
+    assert first.success is True
+    assert restarted.success is True

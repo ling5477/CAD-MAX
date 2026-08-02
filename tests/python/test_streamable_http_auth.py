@@ -11,6 +11,7 @@ import httpx
 import pytest
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from mcp.server.auth.provider import AccessToken
 
 from cad_max_mcp.backends.base import BackendProbe
 from cad_max_mcp.config import CadMaxSettings
@@ -26,6 +27,7 @@ class RecordingBackend:
 
     def __init__(self) -> None:
         self.drawing_calls = 0
+        self.instance_id = uuid4()
 
     @property
     def connection_state(self) -> BridgeConnectionState:
@@ -54,6 +56,7 @@ class RecordingBackend:
     async def drawing_status(self, request_id: UUID, trace_id: UUID) -> ResultEnvelope:
         return await self.drawing_inspect(
             DrawingOperation.STATUS,
+            expected_instance_id=None,
             expected_document_id=None,
             deadline_ms=5000,
             request_id=request_id,
@@ -64,18 +67,34 @@ class RecordingBackend:
         self,
         operation: DrawingOperation,
         *,
+        expected_instance_id: UUID | None,
         expected_document_id: str | None,
         deadline_ms: int,
         request_id: UUID,
         trace_id: UUID,
     ) -> ResultEnvelope:
-        del operation, expected_document_id, deadline_ms
+        del expected_instance_id, expected_document_id, deadline_ms
         self.drawing_calls += 1
+        assert operation is DrawingOperation.STATUS
         return ResultEnvelope.ok(
             request_id=request_id,
             trace_id=trace_id,
             message="mock backend",
-            data={"readOnly": True},
+            data={
+                "instanceId": str(self.instance_id),
+                "dispatchId": str(uuid4()),
+                "operation": "status",
+                "mainThreadVerified": True,
+                "executionContext": "APPLICATION_CONTEXT",
+                "activeDocumentId": None,
+                "queueDelayMs": 0,
+                "executionMs": 0,
+                "readMode": "READ_ONLY",
+                "transactionUsed": False,
+                "runtimeState": "READY",
+                "documentState": "NO_ACTIVE_DOCUMENT",
+                "documentCount": 0,
+            },
         )
 
 
@@ -105,6 +124,24 @@ def initialize_request() -> dict[str, Any]:
             "clientInfo": {"name": "cad-max-test", "version": "1.0"},
         },
     }
+
+
+def modern_request(
+    method: str, *, name: str | None = None
+) -> tuple[dict[str, str], dict[str, Any]]:
+    version = "2026-07-28"
+    params: dict[str, Any] = {
+        "_meta": {
+            "io.modelcontextprotocol/protocolVersion": version,
+            "io.modelcontextprotocol/clientCapabilities": {},
+        }
+    }
+    if name is not None:
+        params.update({"name": name, "arguments": {"operation": "status"}})
+    headers = {"MCP-Protocol-Version": version, "Mcp-Method": method}
+    if name is not None:
+        headers["Mcp-Name"] = name
+    return headers, {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
 
 
 async def test_streamable_http_verifier_rejects_non_ascii_bearer_without_raising() -> None:
@@ -142,6 +179,87 @@ async def test_streamable_http_rejects_missing_and_wrong_callers_before_backend(
     assert backend.drawing_calls == 0
 
 
+async def test_streamable_http_auth_protects_all_modern_protocol_methods(
+    tmp_path: Path,
+) -> None:
+    token_file, _ = write_token_file(tmp_path, name="mcp-caller-token.json")
+    backend = RecordingBackend()
+    app = create_server(
+        CadMaxSettings(mcp_http_token_file=token_file),
+        backend,
+        "streamable-http",
+    ).streamable_http_app()
+
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://127.0.0.1:47771",
+        ) as client:
+            responses = []
+            for method, name in (
+                ("server/discover", None),
+                ("tools/list", None),
+                ("tools/call", "drawing"),
+            ):
+                headers, body = modern_request(method, name=name)
+                responses.append(await client.post("/mcp", headers=headers, json=body))
+            headers, body = modern_request("tools/list")
+            malformed = await client.post(
+                "/mcp",
+                headers={**headers, "Authorization": "Basic malformed"},
+                json=body,
+            )
+
+    assert all(response.status_code == 401 for response in responses)
+    assert malformed.status_code == 401
+    assert backend.drawing_calls == 0
+
+
+async def test_streamable_http_scope_mismatch_is_forbidden_and_token_is_redacted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    token_file, token = write_token_file(tmp_path, name="mcp-caller-token.json")
+
+    class WrongScopeVerifier:
+        async def verify_token(self, candidate: str) -> AccessToken | None:
+            if candidate != token:
+                return None
+            return AccessToken(
+                token=candidate,
+                client_id="wrong-scope-fixture",
+                scopes=["cad-max:write"],
+            )
+
+    monkeypatch.setattr(
+        "cad_max_mcp.server.create_mcp_http_token_verifier",
+        lambda token_file, bridge_token_file: WrongScopeVerifier(),
+    )
+    backend = RecordingBackend()
+    app = create_server(
+        CadMaxSettings(mcp_http_token_file=token_file),
+        backend,
+        "streamable-http",
+    ).streamable_http_app()
+    headers, body = modern_request("tools/list")
+
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://127.0.0.1:47771",
+        ) as client:
+            response = await client.post(
+                "/mcp",
+                headers={**headers, "Authorization": f"Bearer {token}"},
+                json=body,
+            )
+
+    assert response.status_code == 403
+    assert token not in caplog.text
+    assert backend.drawing_calls == 0
+
+
 async def test_streamable_http_valid_caller_can_initialize_and_call_read_only_tool(
     tmp_path: Path,
 ) -> None:
@@ -163,12 +281,12 @@ async def test_streamable_http_valid_caller_can_initialize_and_call_read_only_to
             async with streamable_http_client(
                 "http://127.0.0.1:47771/mcp",
                 http_client=client,
-            ) as (read, write, _):
+            ) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     result = await session.call_tool("drawing", {"operation": "status"})
 
-    assert result.isError is False
+    assert result.is_error is False
     assert backend.drawing_calls == 1
 
 

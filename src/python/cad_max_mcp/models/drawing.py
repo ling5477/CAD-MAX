@@ -51,6 +51,16 @@ class DrawingInspectRequest(BridgeModel):
             and self.expected_document_id is not None
         ):
             raise ValueError("application operations do not accept expectedDocumentId")
+        if (
+            self.operation
+            not in {
+                DrawingOperation.STATUS,
+                DrawingOperation.LIST_DOCUMENTS,
+                DrawingOperation.ACTIVE_DOCUMENT,
+            }
+            and self.expected_document_id is None
+        ):
+            raise ValueError("document operations require expectedDocumentId")
         return self
 
 

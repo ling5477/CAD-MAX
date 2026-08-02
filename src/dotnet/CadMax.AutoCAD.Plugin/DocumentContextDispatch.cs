@@ -888,6 +888,14 @@ internal static class DrawingInspectRequestValidator
             return CadStatus.InvalidArgument;
         }
 
+        if (request.Operation is not DrawingOperation.Status
+                and not DrawingOperation.ListDocuments
+                and not DrawingOperation.ActiveDocument
+            && request.ExpectedDocumentId is null)
+        {
+            return CadStatus.InvalidArgument;
+        }
+
         return Enum.IsDefined(request.Operation)
             ? null
             : CadStatus.InvalidArgument;

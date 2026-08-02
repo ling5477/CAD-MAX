@@ -486,6 +486,25 @@ public sealed class LoopbackBridgeServerTests
         Assert.Equal("METHOD_NOT_ALLOWED", wrongMethod.Status);
     }
 
+    [Fact]
+    public async Task DrawingInspectionPostRejectsMissingDocumentSelector()
+    {
+        await using var fixture = await ServerFixture.StartAsync();
+        var request = new DrawingInspectRequest(
+            CadProtocol.SchemaVersion,
+            Guid.NewGuid().ToString("D"),
+            Guid.NewGuid().ToString("D"),
+            DateTimeOffset.UtcNow.AddSeconds(5),
+            fixture.Service.InstanceId,
+            DrawingOperation.Units,
+            ExpectedDocumentId: null);
+
+        var response = await fixture.SendJsonAsync(BridgeRoutes.DrawingInspect, request);
+
+        Assert.Equal((400, "INVALID_ARGUMENT"), (response.StatusCode, response.Status));
+        Assert.Equal(0, fixture.Dispatcher.GetSnapshot().QueueDepth);
+    }
+
     private static LoopbackBridgeServer CreateServer(
         int port,
         BridgeTokenCredential credential,

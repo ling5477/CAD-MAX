@@ -115,7 +115,6 @@ class AutoCadBridgeBackend:
         self._instance_id: UUID | None = None
         self._capability_revision: str | None = None
         self._capability_cache: dict[str, bool] = {}
-        self._document_id: str | None = None
         self._connection_state = BridgeConnectionState.NOT_CONNECTED
 
     @property
@@ -153,6 +152,7 @@ class AutoCadBridgeBackend:
         """Preserve the original status operation through the strict Phase 1.4 route."""
         return await self.drawing_inspect(
             DrawingOperation.STATUS,
+            expected_instance_id=None,
             expected_document_id=None,
             deadline_ms=5000,
             request_id=request_id,
@@ -163,12 +163,13 @@ class AutoCadBridgeBackend:
         self,
         operation: DrawingOperation,
         *,
+        expected_instance_id: UUID | None,
         expected_document_id: str | None,
         deadline_ms: int,
         request_id: UUID,
         trace_id: UUID,
     ) -> ResultEnvelope:
-        """Run one fixed drawing inspection without retrying busy/modal/timeout."""
+        """Run one fixed drawing inspection using only handles from this request."""
         if deadline_ms < 100 or deadline_ms > 10_000:
             return ResultEnvelope.failure(
                 request_id=request_id,
@@ -176,6 +177,25 @@ class AutoCadBridgeBackend:
                 status=Status.INVALID_ARGUMENT,
                 message="Drawing inspection deadline is invalid",
             )
+        application_operations = {DrawingOperation.STATUS, DrawingOperation.LIST_DOCUMENTS}
+        if operation in application_operations:
+            if expected_document_id is not None:
+                return ResultEnvelope.failure(
+                    request_id=request_id,
+                    trace_id=trace_id,
+                    status=Status.INVALID_ARGUMENT,
+                    message="Application drawing operations do not accept a document handle",
+                )
+        elif expected_instance_id is None or (
+            operation is not DrawingOperation.ACTIVE_DOCUMENT and expected_document_id is None
+        ):
+            return ResultEnvelope.failure(
+                request_id=request_id,
+                trace_id=trace_id,
+                status=Status.INVALID_ARGUMENT,
+                message="Drawing inspection requires explicit state handles",
+            )
+
         health_envelope, health = await self._request_typed("health", BridgeHealthData)
         self._classify_connection(health_envelope, health)
         if not health_envelope.success or health is None:
@@ -185,12 +205,19 @@ class AutoCadBridgeBackend:
                 status=health_envelope.status,
                 message=_probe_message(health_envelope.status, self._connection_state),
             )
+        if expected_instance_id is not None and expected_instance_id != health.instance_id:
+            return ResultEnvelope.failure(
+                request_id=request_id,
+                trace_id=trace_id,
+                status=Status.INSTANCE_MISMATCH,
+                message="AutoCAD instance handle does not match the active bridge instance",
+            )
 
         try:
-            envelope, data = await self._request_drawing_typed(
+            envelope, _data = await self._request_drawing_typed(
                 operation=operation,
                 deadline=datetime.now(UTC) + timedelta(milliseconds=deadline_ms),
-                expected_instance_id=health.instance_id,
+                expected_instance_id=expected_instance_id or health.instance_id,
                 expected_document_id=expected_document_id,
                 request_id=request_id,
                 trace_id=trace_id,
@@ -202,11 +229,6 @@ class AutoCadBridgeBackend:
                 status=Status.INVALID_ARGUMENT,
                 message="Drawing inspection request is invalid",
             )
-        if envelope.success and data is not None and data.active_document_id is not None:
-            self._document_id = data.active_document_id
-        elif envelope.status in {Status.DOCUMENT_DESTROYED, Status.DOCUMENT_NOT_FOUND}:
-            if expected_document_id is None or expected_document_id == self._document_id:
-                self._document_id = None
         return envelope
 
     async def context_probe(
@@ -218,7 +240,7 @@ class AutoCadBridgeBackend:
     ) -> ResultEnvelope:
         """Run the sole fixed document-context probe without retrying failures."""
         try:
-            envelope, data = await self._request_context_typed(
+            envelope, _data = await self._request_context_typed(
                 deadline=deadline,
                 expected_instance_id=expected_instance_id,
                 expected_document_id=expected_document_id,
@@ -228,11 +250,6 @@ class AutoCadBridgeBackend:
                 Status.INVALID_ARGUMENT,
                 "AutoCAD context probe request is invalid",
             )
-        if envelope.success and data is not None:
-            self._document_id = data.active_document_id
-        elif envelope.status in {Status.DOCUMENT_DESTROYED, Status.DOCUMENT_NOT_FOUND}:
-            if expected_document_id is None or expected_document_id == self._document_id:
-                self._document_id = None
         return envelope
 
     async def context_doctor(self) -> tuple[int, dict[str, Any]]:
@@ -277,8 +294,6 @@ class AutoCadBridgeBackend:
             "quiescent": first.is_quiescent and second.is_quiescent,
         }
         success = all(checks.values())
-        if success:
-            self._document_id = first.active_document_id
         report = {
             "schemaVersion": "1.0",
             "status": "OK" if success else "CONTEXT_VALIDATION_FAILED",
@@ -453,8 +468,6 @@ class AutoCadBridgeBackend:
             ),
         }
         success = all(checks.values())
-        if success:
-            self._document_id = context.active_document_id
         report = {
             "schemaVersion": "1.0",
             "status": "OK" if success else "DRAWING_VALIDATION_FAILED",
@@ -645,9 +658,6 @@ class AutoCadBridgeBackend:
             ):
                 return self._response_binding_failure(request.request_id, request.trace_id)
             self._observe_instance(data)
-        elif envelope.status in {Status.DOCUMENT_DESTROYED, Status.DOCUMENT_NOT_FOUND}:
-            if expected_document_id is None or expected_document_id == self._document_id:
-                self._document_id = None
         return envelope, data
 
     async def _request_drawing_typed(
@@ -692,9 +702,6 @@ class AutoCadBridgeBackend:
             ):
                 return self._response_binding_failure(request.request_id, request.trace_id)
             self._observe_instance(data)
-        elif envelope.status in {Status.DOCUMENT_DESTROYED, Status.DOCUMENT_NOT_FOUND}:
-            if expected_document_id is None or expected_document_id == self._document_id:
-                self._document_id = None
         return envelope, data
 
     async def _request_route(
@@ -803,7 +810,6 @@ class AutoCadBridgeBackend:
         if self._instance_id is not None and self._instance_id != instance_id:
             self._capability_cache.clear()
             self._capability_revision = None
-            self._document_id = None
         self._instance_id = instance_id
 
         revision = (

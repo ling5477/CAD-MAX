@@ -43,6 +43,7 @@ class CadMaxSettings(BaseSettings):
     http_host: str = "127.0.0.1"
     http_port: int = Field(default=47771, ge=1, le=65535)
     http_path: str = "/mcp"
+    mcp_max_request_body_bytes: int = Field(default=65_536, ge=4096, le=1_048_576)
     bridge_url: str | None = None
     bridge_token_file: Path | None = None
     mcp_http_token_file: Path | None = None

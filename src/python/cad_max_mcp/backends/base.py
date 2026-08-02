@@ -42,12 +42,13 @@ class CadBackend(Protocol):
         self,
         operation: DrawingOperation,
         *,
+        expected_instance_id: UUID | None,
         expected_document_id: str | None,
         deadline_ms: int,
         request_id: UUID,
         trace_id: UUID,
     ) -> ResultEnvelope:
-        """Execute one strict read-only drawing inspection operation."""
+        """Execute one strict read-only drawing inspection with explicit state handles."""
         ...
 
     async def bridge_system(self, operation: str) -> ResultEnvelope:
